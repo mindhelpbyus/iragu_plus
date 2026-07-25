@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iragu+ — Bedrock Health</title>
+  <meta name="description" content="Iragu+ — practice management for therapists and clinicians." />
+  <meta name="theme-color" content="#1E7048" />
+
+  <!-- Content Security Policy (HIPAA / Security Audit Requirement)
+       Hardened: no script-src 'unsafe-inline' (all scripts are 'self' external modules),
+       no external script CDNs. style-src keeps 'unsafe-inline' (React style={{}} attrs). -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' data: https: blob:;
+    font-src 'self' data:;
+    object-src 'none';
+    connect-src 'self' https://*.execute-api.ap-south-1.amazonaws.com https://cognito-idp.ap-south-1.amazonaws.com https://*.auth.ap-south-1.amazoncognito.com wss://*.livekit.cloud https://*.livekit.cloud;
+    base-uri 'self';
+    form-action 'self';
+  ">
+
+  <!-- Theme guard (externalized so CSP can forbid inline scripts) -->
+  <script src="/theme-init.js"></script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>
