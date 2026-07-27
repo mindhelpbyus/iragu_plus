@@ -96,3 +96,26 @@ export function deleteBlockedSlot(therapistId: number, slotId: number) {
     rawEnvelope: true,
   });
 }
+
+/**
+ * GET /therapists/availability/{id} — the therapist's stored IANA timezone
+ * (e.g. 'Asia/Kolkata'), which the backend uses to convert their weekly
+ * working-hours schedule into correct UTC slot boundaries. This is a
+ * profile setting the therapist confirms, not auto-derived from the
+ * browser — see CalendarPage's timezone-mismatch prompt.
+ */
+export function getTherapistTimezone(therapistId: number) {
+  return apiFetch(`/therapists/availability/${therapistId}`, {
+    schema: z.object({ success: z.boolean(), data: z.object({ timezone: z.string() }) }),
+    rawEnvelope: true,
+  }).then((res) => res.data.timezone);
+}
+
+export function updateTherapistTimezone(therapistId: number, timezone: string) {
+  return apiFetch(`/therapists/availability/${therapistId}`, {
+    method: 'PUT',
+    body: { timezone },
+    schema: z.object({ success: z.boolean() }),
+    rawEnvelope: true,
+  });
+}

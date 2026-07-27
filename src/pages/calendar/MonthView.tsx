@@ -1,13 +1,7 @@
-import { PALETTE_FLAT, type CalEvent } from './calendarConstants';
+import { type CalEvent } from './calendarConstants';
 import { addDays, isSameDay, startOfWeek, toDateKey } from './dateUtils';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function chipColorFor(name: string) {
-  if (name.includes('Couple') || name.includes('&')) return PALETTE_FLAT.lavender;
-  if (name.toLowerCase().includes('intake') || name.toLowerCase().includes('group int')) return PALETTE_FLAT.amber;
-  return PALETTE_FLAT.green;
-}
 
 /** 6 full weeks (42 days), Monday-first, covering the given month plus its leading/trailing days. */
 function monthGridDates(monthAnchor: Date): Date[] {
@@ -52,7 +46,7 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
               tabIndex={0}
               onClick={() => onSelectDay(d)}
               onKeyDown={(e) => e.key === 'Enter' && onSelectDay(d)}
-              className="box-border min-h-[104px] cursor-pointer border-b border-r border-action-light p-2 text-left transition-colors hover:bg-canvas"
+              className="box-border min-h-[104px] cursor-pointer border-b border-r border-gray-200 p-2 text-left transition-colors hover:bg-canvas"
             >
               <div
                 className="mb-1.5 flex h-6 w-6 items-center justify-center rounded-full text-xs"
@@ -67,7 +61,7 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
 
               <div className="flex flex-col gap-1">
                 {visible.map((ev) => {
-                  const colors = chipColorFor(ev.name + ev.type);
+                  const colors = ev.colors;
                   return (
                     <button
                       key={ev.id ?? ev.time + ev.name}

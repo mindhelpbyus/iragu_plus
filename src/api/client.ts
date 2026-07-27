@@ -228,7 +228,7 @@ export class ApiSchemaError extends Error {
     readonly endpoint: string,
     readonly issues: z.core.$ZodIssue[]
   ) {
-    super(`Response from ${endpoint} did not match the expected schema`);
+    super(`Response from ${endpoint} did not match the expected schema: ${JSON.stringify(issues)}`);
     this.name = 'ApiSchemaError';
   }
 }
@@ -288,7 +288,7 @@ export async function apiFetch<T>(endpoint: string, opts: ApiFetchOptions<T>): P
 
   const parsed = opts.schema.safeParse(body);
   if (!parsed.success) {
-    logger.error('[apiFetch] schema mismatch', { endpoint, issueCount: parsed.error.issues.length });
+    logger.error('[apiFetch] schema mismatch', { endpoint, issues: JSON.stringify(parsed.error.issues) });
     throw new ApiSchemaError(endpoint, parsed.error.issues);
   }
   return parsed.data;

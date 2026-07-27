@@ -12,8 +12,29 @@
  * own local display independently.
  */
 import type { RawAppointment } from '../../api/appointmentsBackend';
-import { PALETTE, type CalEvent, initialsOf } from './calendarConstants';
+import { PALETTE, type CalEvent, type EventColors, initialsOf } from './calendarConstants';
 import { hourOfDay, minutesBetween, formatTimeRange, toDateKey } from './dateUtils';
+
+/**
+ * Builds a chip color triple (bg/border/fg) from a single therapist-picked
+ * hex, matching the palette's visual weight — a light tint background, the
+ * chosen hue as the left border, and a darkened version of it for readable
+ * text (chip backgrounds here are pale, so a full-saturation fg would be
+ * too low-contrast).
+ */
+function colorsFromHex(hex: string): EventColors {
+  const full = hex.length === 4 ? hex.replace(/^#(.)(.)(.)$/, '#$1$1$2$2$3$3') : hex;
+  const n = parseInt(full.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const tint = (c: number) => Math.round(c + (255 - c) * 0.82); // toward-white blend for the bg
+  const shade = (c: number) => Math.round(c * 0.55); // toward-black blend for readable fg text
+  const toHex = (c: number) => c.toString(16).padStart(2, '0');
+  const bg = `#${toHex(tint(r))}${toHex(tint(g))}${toHex(tint(b))}`;
+  const fg = `#${toHex(shade(r))}${toHex(shade(g))}${toHex(shade(b))}`;
+  return { bg, border: full, fg };
+}
 
 const TYPE_LABEL: Record<RawAppointment['type'], string> = {
   individual: 'Individual',
@@ -53,7 +74,7 @@ export function toCalEvent(a: RawAppointment): CalEvent {
     time: formatTimeRange(a.startTime, a.endTime),
     name: clientName(a),
     type: [TYPE_LABEL[a.type], a.consultingReason].filter(Boolean).join(' · '),
-    colors: TYPE_COLOR[a.type] ?? PALETTE.green,
+    colors: a.colorOverride ? colorsFromHex(a.colorOverride) : (TYPE_COLOR[a.type] ?? PALETTE.green),
     owner: 0, // real appointments are always the caller's own — no multi-therapist owner index yet
     showJoin: !!a.videoRoomUrl && (a.status === 'confirmed' || a.status === 'in_progress'),
     clientInitials: initialsOf(clientName(a)),
@@ -63,6 +84,7 @@ export function toCalEvent(a: RawAppointment): CalEvent {
     rawType: a.type,
     notes: a.notes ?? undefined,
     status: a.status,
+    colorOverride: a.colorOverride ?? undefined,
   };
 }
 

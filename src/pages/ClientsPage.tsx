@@ -12,6 +12,7 @@ import {
 } from '../components/ui/pagination';
 import { useClients } from './clients/useClients';
 import { initialsOf } from './calendar/calendarConstants';
+import { MoodIndicator } from '../components/ui/MoodIndicator';
 
 const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
   active: { bg: '#E8F2EB', fg: '#175C3B' },
@@ -86,11 +87,12 @@ export default function ClientsPage() {
           <div className="overflow-hidden rounded-[14px] border border-rule bg-surface shadow-[0_1px_2px_0_rgba(28,24,18,.04)]">
             <div
               className="grid gap-3 border-b border-rule bg-canvas px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-text"
-              style={{ gridTemplateColumns: '2.2fr 1fr 0.7fr 1.2fr' }}
+              style={{ gridTemplateColumns: '2.2fr 1fr 0.7fr 1fr 1.2fr' }}
             >
               <span>Client</span>
               <span>Status</span>
               <span>Sessions</span>
+              <span>Mood</span>
               <span>Next session</span>
             </div>
 
@@ -108,7 +110,7 @@ export default function ClientsPage() {
                   type="button"
                   onClick={() => navigate(`/clients/${c.id}`)}
                   className="grid w-full items-center gap-3 border-b border-action-light px-5 py-3 text-left transition-colors last:border-b-0 hover:bg-action-light/30"
-                  style={{ gridTemplateColumns: '2.2fr 1fr 0.7fr 1.2fr' }}
+                  style={{ gridTemplateColumns: '2.2fr 1fr 0.7fr 1fr 1.2fr' }}
                 >
                   <span className="flex min-w-0 items-center gap-3">
                     <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-action-light text-xs font-semibold text-action-dark">
@@ -123,12 +125,15 @@ export default function ClientsPage() {
                     <StatusPill status={c.status} />
                   </span>
                   <span className="text-[13px] text-ink">{c.totalSessions}</span>
+                  <span>
+                    <MoodIndicator moods={c.dailyMoods} />
+                  </span>
                   <span className="text-[13px] text-ink">{formatNext(c.nextAppointment)}</span>
                 </button>
               ))}
           </div>
 
-          {isOrg && totalPages > 1 && (
+          {totalPages > 1 && (
             <Pagination className="mt-5 justify-end">
               <PaginationContent>
                 <PaginationItem>

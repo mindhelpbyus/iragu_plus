@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
-import { rescheduleAppointment, updateAppointmentStatus, cancelAppointment, type AppointmentType } from '../../api/appointmentsBackend';
+import {
+  rescheduleAppointment,
+  updateAppointmentStatus,
+  updateAppointmentColor,
+  cancelAppointment,
+  type AppointmentType,
+} from '../../api/appointmentsBackend';
 import { ApiFetchError } from '../../api/client';
 import { type CalEvent } from './calendarConstants';
 import { addDays, formatDayShort, toDateKey } from './dateUtils';
@@ -14,6 +20,9 @@ const APPOINTMENT_TYPES: { value: AppointmentType; label: string }[] = [
 ];
 
 const DURATIONS = [30, 45, 50, 60, 75, 90];
+
+/** Quick-pick swatches for the priority color override — a free color-picker input covers everything else. */
+const PRIORITY_SWATCHES = ['#B06060', '#C49840', '#1E7048', '#3D6FA8', '#9A90B8', '#48382E'];
 
 interface AppointmentDetailModalProps {
   event: CalEvent;
@@ -30,6 +39,7 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
   );
   const [duration, setDuration] = useState(event.durationMin || 50);
   const [type, setType] = useState<AppointmentType>(event.rawType ?? 'individual');
+  const [colorOverride, setColorOverride] = useState<string | null>(event.colorOverride ?? null);
 
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -38,21 +48,30 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
 
   const dayOptions = Array.from({ length: 10 }, (_, i) => addDays(initialStart, i - 2));
   const isCancelled = event.status === 'cancelled' || event.status === 'no-show';
+  const colorChanged = (colorOverride ?? null) !== (event.colorOverride ?? null);
   const dirty =
     toDateKey(day) !== toDateKey(initialStart) ||
     startTime !== `${String(initialStart.getHours()).padStart(2, '0')}:${String(initialStart.getMinutes()).padStart(2, '0')}` ||
-    duration !== event.durationMin;
+    duration !== event.durationMin ||
+    colorChanged;
 
   const handleSave = async () => {
     if (!event.id) return;
     setSaving(true);
     setError(null);
     try {
-      if (dirty) {
+      const timeChanged =
+        toDateKey(day) !== toDateKey(initialStart) ||
+        startTime !== `${String(initialStart.getHours()).padStart(2, '0')}:${String(initialStart.getMinutes()).padStart(2, '0')}` ||
+        duration !== event.durationMin;
+      if (timeChanged) {
         const [h, m] = startTime.split(':').map(Number);
         const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
         const end = new Date(start.getTime() + duration * 60000);
         await rescheduleAppointment(String(event.id), start.toISOString(), end.toISOString());
+      }
+      if (colorChanged) {
+        await updateAppointmentColor(String(event.id), colorOverride);
       }
       if (type !== event.rawType) {
         // Type isn't part of PUT /appointments/:id's status/time contract on
@@ -218,6 +237,58 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
                     {t.label}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-text">
+                Priority color <span className="normal-case text-muted-text/70">· overrides the type color on the calendar</span>
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setColorOverride(null)}
+                  title="Default (use appointment type color)"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border-2 text-[10px] font-semibold"
+                  style={{
+                    borderColor: colorOverride === null ? '#1E7048' : 'var(--rule)',
+                    background: 'repeating-conic-gradient(#F2EAE0 0% 25%, transparent 0% 50%)',
+                    color: 'var(--body-text)',
+                  }}
+                >
+                  ✕
+                </button>
+                {PRIORITY_SWATCHES.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColorOverride(c)}
+                    title={c}
+                    className="h-8 w-8 rounded-full border-2 transition-transform"
+                    style={{
+                      background: c,
+                      borderColor: colorOverride === c ? 'var(--ink)' : 'transparent',
+                      transform: colorOverride === c ? 'scale(1.1)' : 'scale(1)',
+                    }}
+                  />
+                ))}
+                <label className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-rule text-muted-text">
+                  <span className="pointer-events-none text-sm leading-none">+</span>
+                  <input
+                    type="color"
+                    value={colorOverride ?? '#1E7048'}
+                    onChange={(e) => setColorOverride(e.target.value)}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    title="Pick a custom color"
+                  />
+                </label>
+                {colorOverride && !PRIORITY_SWATCHES.includes(colorOverride) && (
+                  <span
+                    className="h-8 w-8 rounded-full border-2"
+                    style={{ background: colorOverride, borderColor: 'var(--ink)' }}
+                    title={colorOverride}
+                  />
+                )}
               </div>
             </div>
 

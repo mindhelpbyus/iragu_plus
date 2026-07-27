@@ -15,6 +15,7 @@ import { useMyAppointments } from './calendar/useMyAppointments';
 import { useMyLeaves } from './calendar/useMyLeaves';
 import { useMyBlockedSlots } from './calendar/useMyBlockedSlots';
 import { useAvailabilityRange } from './calendar/useAvailabilityRange';
+import { useAutoSyncTimezone } from './calendar/useAutoSyncTimezone';
 import { groupAppointmentsByDate } from './calendar/appointmentAdapter';
 import {
   startOfWeek,
@@ -43,7 +44,15 @@ export default function CalendarPage() {
   const [search, setSearch] = useState('');
   const [blockOpen, setBlockOpen] = useState(false);
   const [bookOpen, setBookOpen] = useState(false);
+  const [bookingDate, setBookingDate] = useState<Date | null>(null);
+  const [bookingTime, setBookingTime] = useState<string | undefined>(undefined);
   const [selectedEvent, setSelectedEvent] = useState<CalEvent | null>(null);
+
+  const handleBookSlot = (d: Date, timeStr?: string) => {
+    setBookingDate(d);
+    setBookingTime(timeStr);
+    setBookOpen(true);
+  };
 
   const weekStart = useMemo(() => startOfWeek(anchorDate), [anchorDate]);
   const weekDates = useMemo(() => toWeekDates(weekStart), [weekStart]);
@@ -96,6 +105,8 @@ export default function CalendarPage() {
   );
   const agendaEventsByDate = useMemo(() => groupAppointmentsByDate(agendaAppointments), [agendaAppointments]);
 
+  useAutoSyncTimezone(isTherapist, refetchAvailability);
+
   const subtitle =
     view === 'day'
       ? formatDayFull(anchorDate)
@@ -144,7 +155,7 @@ export default function CalendarPage() {
             setMiniMonth(t);
           }}
           onBlockTimeOff={() => setBlockOpen(true)}
-          onBook={() => setBookOpen(true)}
+          onBook={() => handleBookSlot(anchorDate)}
         />
 
         {error && (
@@ -202,6 +213,7 @@ export default function CalendarPage() {
                 search={search}
                 onSelectDay={goDay}
                 onSelectEvent={setSelectedEvent}
+                onSlotClick={handleBookSlot}
               />
             )}
             {!loading && view === 'day' && (
@@ -213,6 +225,7 @@ export default function CalendarPage() {
                 search={search}
                 onSelectEvent={setSelectedEvent}
                 onRescheduled={refetch}
+                onSlotClick={handleBookSlot}
               />
             )}
             {!loading && view === 'month' && (
@@ -239,7 +252,12 @@ export default function CalendarPage() {
         />
       )}
       {bookOpen && (
-        <BookAppointmentModal initialDate={anchorDate} onClose={() => setBookOpen(false)} onBooked={refetch} />
+        <BookAppointmentModal 
+          initialDate={bookingDate || anchorDate} 
+          initialStartTime={bookingTime}
+          onClose={() => { setBookOpen(false); setBookingTime(undefined); }} 
+          onBooked={refetch} 
+        />
       )}
       {selectedEvent && (
         <AppointmentDetailModal

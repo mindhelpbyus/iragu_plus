@@ -10,6 +10,21 @@ import { addDays, toDateKey } from './dateUtils';
 const FULL_DAY_REASONS = ['Vacation', 'Personal', 'Sick', 'Conference'] as const;
 const INTRA_DAY_REASONS = ['Lunch', 'Break', 'Documentation'] as const;
 
+/** The current wall-clock time (browser-local), rounded up to the next 5 minutes. */
+function nowTimeRounded(): string {
+  const d = new Date();
+  const mins = Math.ceil((d.getHours() * 60 + d.getMinutes()) / 5) * 5;
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = (h * 60 + m + minutes + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 interface BlockTimeOffModalProps {
   onClose: () => void;
   onChanged?: () => void;
@@ -26,8 +41,8 @@ export function BlockTimeOffModal({ onClose, onChanged }: BlockTimeOffModalProps
 
   // Intra day state
   const [intraDate, setIntraDate] = useState(today);
-  const [startTime, setStartTime] = useState('12:00');
-  const [endTime, setEndTime] = useState('13:00');
+  const [startTime, setStartTime] = useState(nowTimeRounded);
+  const [endTime, setEndTime] = useState(() => addMinutesToTime(nowTimeRounded(), 60));
   const [intraReason, setIntraReason] = useState<(typeof INTRA_DAY_REASONS)[number]>('Lunch');
 
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);

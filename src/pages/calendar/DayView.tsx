@@ -16,12 +16,13 @@ interface DayViewProps {
   events: CalEvent[];
   leaves?: LeaveRecord[];
   blockedSlots?: BlockedSlot[];
-  search: string;
+  search?: string;
   onSelectEvent: (ev: CalEvent) => void;
-  onRescheduled: () => void;
+  onRescheduled?: () => void;
+  onSlotClick?: (date: Date, timeStr: string) => void;
 }
 
-export function DayView({ day, events: eventsProp, leaves, blockedSlots, search, onSelectEvent, onRescheduled }: DayViewProps) {
+export function DayView({ day, events: eventsProp, leaves, blockedSlots, search = '', onSelectEvent, onRescheduled, onSlotClick }: DayViewProps) {
   const [events, setEvents] = useState<CalEvent[]>(eventsProp);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const q = search.trim().toLowerCase();
@@ -50,6 +51,11 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
     const newStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), startH, startM, 0, 0);
     const newEnd = new Date(newStart.getTime() + target.durationMin * 60000);
 
+    if (newStart.getTime() < Date.now()) {
+      alert("Cannot reschedule an appointment to the past.");
+      return;
+    }
+
     // Optimistic move so the drag feels immediate; reconciled by refetch,
     // reverted below if the backend rejects the new slot (e.g. a conflict).
     const fmt = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
@@ -64,7 +70,7 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
     try {
       await rescheduleAppointment(String(target.id), newStart.toISOString(), newEnd.toISOString());
       toast.success('Appointment rescheduled');
-      onRescheduled();
+      if (onRescheduled) onRescheduled();
     } catch (err) {
       setEvents(eventsProp);
       toast.error(err instanceof Error ? err.message : 'Could not reschedule — slot may be unavailable.');
@@ -93,15 +99,18 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
         onDrop={handleDrop}
       >
         <HourGutter />
-        <div className="relative">
+        <div className="relative border-l border-gray-200">
           {Array.from({ length: 24 }).map((_, h) => (
-            <div key={h} className="h-20 border-b border-action-light" />
+            <div key={h} className="h-20 border-b border-gray-200 flex flex-col">
+              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:00`)} />
+              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:30`)} />
+            </div>
           ))}
 
           {(leaves ? getLeaveBlocksForDay(day, leaves) : []).map((lb, i) => (
             <div
               key={`lb-${lb.id}-${i}`}
-              className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3"
+              className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 pointer-events-none"
               style={{
                 top: topForHour(lb.startHour),
                 height: heightForMinutes(lb.durationMin),
@@ -125,7 +134,7 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
             return (
               <div
                 key={`bs-${bs.id}-${i}`}
-                className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 border-l-[3px]"
+                className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 border-l-[3px] pointer-events-none"
                 style={{
                   top: topForHour(startH),
                   height: heightForMinutes(durationMin),
@@ -142,6 +151,7 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
 
           {events.map((ev, i) => {
             const match = !q || (ev.name + ' ' + ev.type).toLowerCase().includes(q);
+            const isPastEvent = ev.startTimeIso ? new Date(ev.startTimeIso).getTime() < Date.now() : false;
             
             const leaveBlocks = leaves ? getLeaveBlocksForDay(day, leaves) : [];
             const dayBlockedSlots = blockedSlots ? blockedSlots.filter(s => isSameDay(new Date(s.date), day)) : [];
@@ -162,8 +172,9 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search,
             return (
               <div
                 key={ev.id ?? ev.time + ev.name}
-                draggable
+                draggable={!isPastEvent}
                 onDragStart={(e) => {
+                  if (isPastEvent) return;
                   setDragIdx(i);
                   e.dataTransfer.setData('text/plain', String(ev.id));
                   e.dataTransfer.effectAllowed = 'move';

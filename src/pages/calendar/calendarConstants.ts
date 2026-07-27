@@ -20,13 +20,6 @@ export const PALETTE = {
   tan: { bg: '#F2EAE0', border: '#C9BEAD', fg: '#48382E' },
 } as const satisfies Record<string, EventColors>;
 
-/** Flat (non-gradient) variant used by month-view chips. */
-export const PALETTE_FLAT = {
-  green: { bg: '#E8F2EB', border: '#1E7048', fg: '#175C3B' },
-  lavender: { bg: '#EFEDF5', border: '#9A90B8', fg: '#6B6490' },
-  amber: { bg: '#FAF3E2', border: '#C49840', fg: '#8A6A28' },
-} as const satisfies Record<string, EventColors>;
-
 export interface CalEvent {
   /** Real appointment id — every CalEvent is now backend-sourced (see appointmentAdapter.ts). */
   id?: number;
@@ -48,6 +41,8 @@ export interface CalEvent {
   rawType?: 'individual' | 'couples' | 'family' | 'group';
   notes?: string;
   status?: 'initiated' | 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no-show';
+  /** Raw hex override (e.g. '#B06060'), or undefined if this event uses the default type color. */
+  colorOverride?: string;
 }
 
 export function initialsOf(name: string): string {

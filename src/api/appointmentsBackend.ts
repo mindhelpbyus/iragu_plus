@@ -49,6 +49,8 @@ export interface CreateAppointmentRequest {
   type: AppointmentType;
   mode?: AppointmentMode;
   notes?: string;
+  /** Hex color (e.g. '#B06060') overriding the type-based default for this specific session — e.g. flagging by client priority. */
+  colorOverride?: string;
 }
 
 export interface JoinLinkResponse {
@@ -81,6 +83,8 @@ export interface RawAppointment {
   consultingReason: string | null;
   notes: string | null;
   videoRoomUrl: string | null;
+  /** Hex color overriding the type-based default for this specific session, or null to use the default. */
+  colorOverride: string | null;
   client: { id: number; email: string; firstName: string; lastName: string } | null;
   therapist: { id: number; email: string; firstName: string; lastName: string };
 }
@@ -148,6 +152,11 @@ export function rescheduleAppointment(
     startTime: newStartTime,
     endTime: newEndTime,
   });
+}
+
+/** Sets or clears (pass null) this appointment's color override — not a locked field, so this works even on past/completed sessions. */
+export function updateAppointmentColor(appointmentId: string, colorOverride: string | null): Promise<AppointmentDetails> {
+  return put<AppointmentDetails>(`/appointments/${appointmentId}`, { colorOverride });
 }
 
 // TODO(backend): no dedicated join-link route on backend-initial yet; the link

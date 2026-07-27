@@ -7,4 +7,5 @@ export interface ClientRow {
   totalSessions: number;
   nextAppointment: string | null;
   safetyRisk?: string;
+  dailyMoods?: { mood: string; createdAt: string }[];
 }

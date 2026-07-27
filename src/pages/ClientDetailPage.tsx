@@ -4,6 +4,9 @@ import { ChevronLeft, MessageSquare, Video, ShieldCheck } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/button';
 import { getClientDetail, getClientNotes, getClientConsent, type ClientDetail, type ClinicalNote } from '../api/clientDetail';
+import { getClientAppointments } from '../api/appointmentsBackend';
+import { getClientMoods, getDateRangeForMoods, type DailyMood } from '../api/moods';
+import { MoodIndicator } from '../components/ui/MoodIndicator';
 import { initialsOf } from './calendar/calendarConstants';
 
 function formatDate(iso: string): string {
@@ -17,6 +20,7 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<ClientDetail | null>(null);
   const [notes, setNotes] = useState<ClinicalNote[]>([]);
   const [consent, setConsent] = useState<Awaited<ReturnType<typeof getClientConsent>> | null>(null);
+  const [moods, setMoods] = useState<DailyMood[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,12 +34,19 @@ export default function ClientDetailPage() {
       getClientDetail(clientId),
       getClientNotes(clientId).catch(() => []),
       getClientConsent(clientId).catch(() => null),
+      getClientAppointments(clientId).catch(() => []),
     ])
-      .then(([detail, noteList, consentInfo]) => {
+      .then(async ([detail, noteList, consentInfo, appointments]) => {
+        if (cancelled) return;
+        
+        const { startDate, endDate } = getDateRangeForMoods(appointments);
+        const moodList = await getClientMoods(Number(clientId), startDate, endDate).catch(() => []);
+        
         if (cancelled) return;
         setClient(detail);
         setNotes(noteList);
         setConsent(consentInfo);
+        setMoods(moodList);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load client');
@@ -110,9 +121,14 @@ export default function ClientDetailPage() {
                     {client.clientProfile?.preferredTherapyType ?? '—'}
                   </div>
                 </div>
-                <div className="rounded-[14px] border border-rule bg-surface p-5">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Location</div>
-                  <div className="mt-2 text-2xl font-semibold text-ink">{client.clientProfile?.location ?? '—'}</div>
+                <div className="flex flex-col justify-between rounded-[14px] border border-rule bg-surface p-5">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Latest mood</div>
+                    <span className="text-xs font-semibold text-action-dark">{moods.length > 0 ? `${moods.length} entries` : 'No data'}</span>
+                  </div>
+                  <div className="mt-auto pt-4">
+                    <MoodIndicator moods={moods} className="h-6 gap-1" showScore={true} />
+                  </div>
                 </div>
               </div>
 

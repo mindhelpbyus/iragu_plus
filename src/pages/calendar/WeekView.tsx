@@ -14,13 +14,14 @@ interface WeekViewProps {
   eventsByDate: Record<string, CalEvent[]>;
   leaves?: LeaveRecord[];
   blockedSlots?: BlockedSlot[];
-  search: string;
+  search?: string;
   onSelectDay: (d: Date) => void;
   onSelectEvent: (ev: CalEvent) => void;
+  onSlotClick?: (date: Date, timeStr: string) => void;
 }
 
-export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search, onSelectDay, onSelectEvent }: WeekViewProps) {
-  const q = search.trim().toLowerCase();
+export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search, onSelectDay, onSelectEvent, onSlotClick }: WeekViewProps) {
+  const q = (search || '').trim().toLowerCase();
   const scrollRef = useScrollToBusinessHours();
   const today = new Date();
 
@@ -37,7 +38,7 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
               key={toDateKey(d)}
               type="button"
               onClick={() => onSelectDay(d)}
-              className="border-l border-action-light px-2 pb-3 pt-2.5 text-center"
+              className="border-l border-gray-200 px-2 pb-3 pt-2.5 text-center"
             >
               <div className={`text-[11px] font-semibold uppercase ${isToday ? 'text-action-dark' : 'text-muted-text'}`}>
                 {formatDayShort(d)}
@@ -64,17 +65,20 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
           return (
             <div
               key={dKey}
-              className="relative border-l border-action-light"
+              className="relative border-l border-gray-200"
               style={{ background: isWeekend ? 'var(--canvas)' : 'transparent' }}
             >
               {Array.from({ length: 24 }).map((_, h) => (
-                <div key={h} className="h-20 border-b border-action-light" />
+                <div key={h} className="h-20 border-b border-gray-200 flex flex-col">
+                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:00`)} />
+                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:30`)} />
+                </div>
               ))}
 
-              {(leaves ? getLeaveBlocksForDay(d, leaves) : []).map((lb, i) => (
+              {leaveBlocks.map((lb, i) => (
                 <div
                   key={`lb-${lb.id}-${i}`}
-                  className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3"
+                  className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 pointer-events-none"
                   style={{
                     top: topForHour(lb.startHour),
                     height: heightForMinutes(lb.durationMin),
@@ -98,7 +102,7 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
                 return (
                   <div
                     key={`bs-${bs.id}-${i}`}
-                    className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 border-l-[3px]"
+                    className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 border-l-[3px] pointer-events-none"
                     style={{
                       top: topForHour(startH),
                       height: heightForMinutes(durationMin),
@@ -139,36 +143,38 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
                       e.stopPropagation();
                       onSelectEvent(ev);
                     }}
-                    className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-[10px] border p-2 shadow-sm transition-transform hover:scale-[1.02] ${
-                      isConflicting ? 'border-[#B06060] bg-[#FBEFEF] z-10' : 'border-[#C8E1CF] bg-action-light/90'
+                    className={`absolute left-0.5 right-0.5 cursor-pointer overflow-hidden rounded-[5px] border-l-[3.5px] p-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-transform hover:scale-[1.02] ${
+                      isConflicting ? 'border-l-[#B06060] bg-[#FBEFEF] z-10' : ''
                     }`}
                     style={{
                       top: topForHour(ev.startHour),
                       height: heightForMinutes(ev.durationMin),
                       opacity: match ? 1 : 0.2,
-                      ...(!isConflicting && ev.clientInitials && {
-                        background: 'var(--action-light)',
-                        borderColor: 'var(--action)',
+                      ...(!isConflicting && {
+                        background: ev.colors.bg,
+                        borderLeftColor: ev.colors.border,
                       }),
                     }}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className={`text-[11px] font-bold ${isConflicting ? 'text-[#8E4848]' : 'text-action-dark'}`}>{ev.name}</div>
-                      {isConflicting && <AlertTriangle className="h-3.5 w-3.5 text-[#8E4848]" />}
+                    <div className="relative flex items-start justify-between">
+                      <div className={`text-[11px] font-semibold leading-[1.1] pr-4 ${isConflicting ? 'text-[#8E4848]' : ''}`} style={isConflicting ? undefined : { color: ev.colors.fg }}>
+                        {ev.name}
+                      </div>
+                      {isConflicting && <AlertTriangle className="absolute right-0 top-0 h-3.5 w-3.5 text-[#8E4848]" />}
+                      {!isConflicting && ev.clientInitials && (
+                        <div 
+                          className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold text-white shadow-sm"
+                          style={{ background: ev.colors.border }}
+                        >
+                          {ev.clientInitials}
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-0.5 text-[10px] text-muted-text">
-                      {ev.time}
+                    <div className="mt-0.5 text-[9.5px] leading-[1.2] text-[#716A60]">
+                      {ev.time.replace('–', ' - ')}
                       <br />
                       {ev.type}
                     </div>
-                    {ev.clientInitials && (
-                      <div 
-                        className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-0.5 text-[9px] font-bold text-white shadow-sm"
-                        style={{ background: ev.colors.border }}
-                      >
-                        {ev.clientInitials}
-                      </div>
-                    )}
                   </div>
                 );
               })}

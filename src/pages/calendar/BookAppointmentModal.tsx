@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Video, MapPin, Flag, AlertTriangle } from 'lucide-react';
+import { Video, MapPin, Flag, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMyClients, type BackendClient } from '../../api/clients';
 import { createAppointment, type AppointmentType, type AppointmentMode } from '../../api/appointmentsBackend';
@@ -18,8 +18,33 @@ const APPOINTMENT_TYPES: { value: AppointmentType; label: string; dot: string; b
 
 const DURATIONS = ['30 min', '50 min', '60 min', '75 min', '90 min'];
 
-/** Curated working hours (08:00 - 17:00) */
-const SUGGESTED_TIMES = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+/** Quick-pick swatches for the priority color override — a free color-picker input covers everything else. */
+const PRIORITY_SWATCHES = ['#B06060', '#C49840', '#1E7048', '#3D6FA8', '#9A90B8', '#48382E'];
+
+/** Every hour of the day, on-the-hour — a therapist can be booked at any time, not just business hours (e.g. 8 PM). */
+const SUGGESTED_TIMES = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, '0')}:00`);
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = (h * 60 + m + minutes + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function minutesBetweenTimes(start: string, end: string): number {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const diff = eh * 60 + em - (sh * 60 + sm);
+  return diff > 0 ? diff : diff + 1440; // end past midnight wraps to next day
+}
+
+/** The current wall-clock time (browser-local), rounded up to the next 5 minutes. */
+function nowTimeRounded(): string {
+  const d = new Date();
+  const mins = Math.ceil((d.getHours() * 60 + d.getMinutes()) / 5) * 5;
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
 
 function clientName(c: BackendClient): string {
   return `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || c.email;
@@ -27,11 +52,12 @@ function clientName(c: BackendClient): string {
 
 interface BookAppointmentModalProps {
   initialDate: Date;
+  initialStartTime?: string;
   onClose: () => void;
   onBooked: () => void;
 }
 
-export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookAppointmentModalProps) {
+export function BookAppointmentModal({ initialDate, initialStartTime, onClose, onBooked }: BookAppointmentModalProps) {
   const [clients, setClients] = useState<BackendClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
 
@@ -40,9 +66,11 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
   const [clientQuery, setClientQuery] = useState('');
   const [showClientList, setShowClientList] = useState(false);
   const [type, setType] = useState<AppointmentType>('individual');
-  const [durationIdx, setDurationIdx] = useState(1); // '50 min'
-  const [startTime, setStartTime] = useState('09:00');
+  const [startTime, setStartTime] = useState(initialStartTime || nowTimeRounded);
+  const [endTime, setEndTime] = useState(() => addMinutesToTime(initialStartTime || nowTimeRounded(), 50)); // matches the '50 min' default duration
   const [mode, setMode] = useState<AppointmentMode>('video');
+  const [colorOverride, setColorOverride] = useState<string | null>(null);
+  const [timeGridOpen, setTimeGridOpen] = useState(false);
   const [flagged, setFlagged] = useState(false);
   const [flagNote, setFlagNote] = useState('');
 
@@ -54,15 +82,13 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const duration = parseInt(DURATIONS[durationIdx], 10);
+  const duration = minutesBetweenTimes(startTime, endTime);
 
   useEffect(() => {
-    getMyClients()
-      .then(({ assignedClients, appointmentClients }) => {
-        const merged = [...assignedClients, ...appointmentClients];
-        const seen = new Set<number>();
-        setClients(merged.filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true))));
-      })
+    // limit is the backend's max page size — this modal needs the full caseload for a
+    // picker, not a paginated page. Server already de-dupes assigned + appointment-history clients.
+    getMyClients({ limit: 100 })
+      .then((res) => setClients(res.data))
       .catch(() => setClients([]))
       .finally(() => setClientsLoading(false));
   }, []);
@@ -98,30 +124,36 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
     clientQuery.trim().length === 0
       ? clients
       : clients.filter((c) => clientName(c).toLowerCase().includes(clientQuery.trim().toLowerCase()));
-  const summary = `${formatDayShort(day)} ${day.getDate()}, ${startTime} · ${DURATIONS[durationIdx]}`;
+  const durationLabel = duration % 60 === 0 ? `${duration / 60} hr${duration === 60 ? '' : 's'}` : `${duration} min`;
+  const summary = `${formatDayShort(day)} ${day.getDate()}, ${startTime}–${endTime} · ${durationLabel}`;
 
-  /**
-   * A suggested time is "taken" if it falls inside any real, unavailable/booked
-   * slot for the selected day. TimeSlot.startTime/endTime are full ISO
-   * datetimes (UTC) — converted to the viewer's local hour/minute here, same
-   * as the calendar grid, so "09:00" in the picker lines up with a slot that
-   * displays as 09:00 on the grid.
-   */
-  const isTimeTaken = useMemo(() => {
-    const takenRanges = daySlots
-      .filter((s) => !s.isAvailable || s.isBooked)
-      .map((s) => {
-        const start = new Date(s.startTime);
-        const end = new Date(s.endTime);
-        return { startMins: start.getHours() * 60 + start.getMinutes(), endMins: end.getHours() * 60 + end.getMinutes() };
-      });
-    return (time: string) => {
-      const [h, m] = time.split(':').map(Number);
-      const startMinsOfDay = h * 60 + m;
-      const endMinsOfDay = startMinsOfDay + duration;
-      return takenRanges.some((r) => startMinsOfDay < r.endMins && endMinsOfDay > r.startMins);
-    };
-  }, [daySlots, duration]);
+  const takenRanges = useMemo(
+    () =>
+      daySlots
+        .filter((s) => !s.isAvailable || s.isBooked)
+        .map((s) => {
+          const start = new Date(s.startTime);
+          const end = new Date(s.endTime);
+          return { startMins: start.getHours() * 60 + start.getMinutes(), endMins: end.getHours() * 60 + end.getMinutes() };
+        }),
+    [daySlots],
+  );
+
+  /** A single suggested start time is "taken" if the *default* 50-min session starting there would overlap a booked/blocked slot — just a quick-glance hint on the grid, not the authoritative check (that's rangeConflict, run against the actual chosen start+end below). */
+  const isTimeTaken = (time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    const startMinsOfDay = h * 60 + m;
+    const endMinsOfDay = startMinsOfDay + 50;
+    return takenRanges.some((r) => startMinsOfDay < r.endMins && endMinsOfDay > r.startMins);
+  };
+
+  /** The real conflict check against the therapist's actual chosen start/end range. */
+  const rangeConflict = useMemo(() => {
+    const [sh, sm] = startTime.split(':').map(Number);
+    const startMinsOfDay = sh * 60 + sm;
+    const endMinsOfDay = startMinsOfDay + duration;
+    return takenRanges.some((r) => startMinsOfDay < r.endMins && endMinsOfDay > r.startMins);
+  }, [takenRanges, startTime, duration]);
 
   const handleSubmit = async () => {
     if (!clientId) {
@@ -138,6 +170,9 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
       // means 4:30 PM wherever they currently are (matches how the grid
       // itself displays times: viewer-local, like Google Calendar).
       const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
+      // `end` is derived from `duration` (itself computed from startTime/endTime,
+      // wrapping past-midnight correctly) rather than parsing endTime a second
+      // time — keeps a single source of truth for the elapsed length.
       const end = new Date(start.getTime() + duration * 60000);
 
       await createAppointment({
@@ -147,6 +182,7 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
         endTime: end.toISOString(),
         type,
         mode,
+        colorOverride: colorOverride ?? undefined,
         notes: flagged && flagNote.trim() ? `Follow-up: ${flagNote.trim()}` : undefined,
       });
       setDone(true);
@@ -299,23 +335,54 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
               ))}
             </div>
 
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">Duration</label>
-            <div className="mb-4 flex gap-2">
-              {DURATIONS.map((d, i) => (
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">
+              Priority color <span className="normal-case text-muted-text/70">· optional, overrides the type color on the calendar</span>
+            </label>
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setColorOverride(null)}
+                title="Default (use appointment type color)"
+                className="flex h-8 w-8 items-center justify-center rounded-full border-2 text-[10px] font-semibold"
+                style={{
+                  borderColor: colorOverride === null ? '#1E7048' : 'var(--rule)',
+                  background: 'repeating-conic-gradient(#F2EAE0 0% 25%, transparent 0% 50%)',
+                  color: 'var(--body-text)',
+                }}
+              >
+                ✕
+              </button>
+              {PRIORITY_SWATCHES.map((c) => (
                 <button
-                  key={d}
+                  key={c}
                   type="button"
-                  onClick={() => setDurationIdx(i)}
-                  className="h-[34px] flex-1 rounded-[9px] border text-xs transition-colors"
-                  style={
-                    durationIdx === i
-                      ? { borderColor: '#1E7048', background: '#E8F2EB', color: '#175C3B', fontWeight: 600 }
-                      : { borderColor: 'var(--rule)', background: 'transparent', color: 'var(--body-text)', fontWeight: 500 }
-                  }
-                >
-                  {d}
-                </button>
+                  onClick={() => setColorOverride(c)}
+                  title={c}
+                  className="h-8 w-8 rounded-full border-2 transition-transform"
+                  style={{
+                    background: c,
+                    borderColor: colorOverride === c ? 'var(--ink)' : 'transparent',
+                    transform: colorOverride === c ? 'scale(1.1)' : 'scale(1)',
+                  }}
+                />
               ))}
+              <label className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-dashed border-rule text-muted-text">
+                <span className="pointer-events-none text-sm leading-none">+</span>
+                <input
+                  type="color"
+                  value={colorOverride ?? '#1E7048'}
+                  onChange={(e) => setColorOverride(e.target.value)}
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  title="Pick a custom color"
+                />
+              </label>
+              {colorOverride && !PRIORITY_SWATCHES.includes(colorOverride) && (
+                <span
+                  className="h-8 w-8 rounded-full border-2"
+                  style={{ background: colorOverride, borderColor: 'var(--ink)' }}
+                  title={colorOverride}
+                />
+              )}
             </div>
 
             {!slotsLoading && onLeave ? (
@@ -328,47 +395,105 @@ export function BookAppointmentModal({ initialDate, onClose, onBooked }: BookApp
               </div>
             ) : (
               <>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">
-                  Start time · around the clock
-                </label>
-            <div className="mb-2.5 grid grid-cols-4 gap-2">
-              {SUGGESTED_TIMES.map((s) => {
-                const taken = !slotsLoading && isTimeTaken(s);
-                const active = startTime === s;
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={taken}
-                    onClick={() => setStartTime(s)}
-                    className="h-[34px] rounded-[9px] border text-xs transition-colors disabled:cursor-not-allowed"
-                    style={
-                      taken
-                        ? { borderColor: 'var(--rule)', background: '#F2EAE0', color: '#A08A78', textDecoration: 'line-through' }
-                        : active
-                          ? { borderColor: '#1E7048', background: '#E8F2EB', color: '#175C3B' }
-                          : { borderColor: 'var(--rule)', background: 'transparent', color: 'var(--body-text)' }
-                    }
-                  >
-                    {s}
-                  </button>
-                );
-              })}
-            </div>
-              <label className="mb-1.5 mt-4 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-text">
-                Between time / Specific time
-              </label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="h-11 w-full rounded-[10px] border border-rule bg-canvas/50 px-3.5 text-sm text-ink outline-none focus:border-action"
-              />
-            {!slotsLoading && isTimeTaken(startTime) && (
-              <p className="-mt-3 mb-4 text-[11px] text-[#8E4848]">Conflicts with an existing slot.</p>
-            )}
+                <button
+                  type="button"
+                  onClick={() => setTimeGridOpen((v) => !v)}
+                  className="mb-1.5 flex w-full items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text"
+                >
+                  Start time · any hour
+                  {timeGridOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+                {timeGridOpen && (
+                  <div className="mb-2.5 grid grid-cols-6 gap-1.5">
+                    {SUGGESTED_TIMES.map((s) => {
+                      const taken = !slotsLoading && isTimeTaken(s);
+                      const active = startTime === s;
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={taken}
+                          onClick={() => {
+                            setStartTime(s);
+                            setEndTime(addMinutesToTime(s, duration));
+                            setTimeGridOpen(false);
+                          }}
+                          className="h-[30px] rounded-[9px] border text-[11px] transition-colors disabled:cursor-not-allowed"
+                          style={
+                            taken
+                              ? { borderColor: 'var(--rule)', background: '#F2EAE0', color: '#A08A78', textDecoration: 'line-through' }
+                              : active
+                                ? { borderColor: '#1E7048', background: '#E8F2EB', color: '#175C3B' }
+                                : { borderColor: 'var(--rule)', background: 'transparent', color: 'var(--body-text)' }
+                          }
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">Mode</label>
+                <div className="mb-4 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-text">
+                      Start
+                    </label>
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => {
+                        setStartTime(e.target.value);
+                        setEndTime(addMinutesToTime(e.target.value, duration));
+                      }}
+                      className="h-11 w-full rounded-[10px] border border-rule bg-canvas/50 px-3.5 text-sm text-ink outline-none focus:border-action"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-text">
+                      End
+                    </label>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="h-11 w-full rounded-[10px] border border-rule bg-canvas/50 px-3.5 text-sm text-ink outline-none focus:border-action"
+                    />
+                  </div>
+                </div>
+
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">
+                  Duration · sets End from Start
+                </label>
+                <div className="mb-2.5 flex gap-2">
+                  {DURATIONS.map((d) => {
+                    const mins = parseInt(d, 10);
+                    const active = duration === mins;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setEndTime(addMinutesToTime(startTime, mins))}
+                        className="h-[34px] flex-1 rounded-[9px] border text-xs transition-colors"
+                        style={
+                          active
+                            ? { borderColor: '#1E7048', background: '#E8F2EB', color: '#175C3B', fontWeight: 600 }
+                            : { borderColor: 'var(--rule)', background: 'transparent', color: 'var(--body-text)', fontWeight: 500 }
+                        }
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mb-4 text-[11px] text-muted-text">
+                  {durationLabel} session · {startTime}–{endTime}
+                </p>
+                {!slotsLoading && rangeConflict && (
+                  <p className="-mt-3 mb-4 text-[11px] text-[#8E4848]">Conflicts with an existing slot.</p>
+                )}
+
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">Mode</label>
             <div className="mb-5 flex gap-2">
               <button
                 type="button"
