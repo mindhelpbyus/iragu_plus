@@ -55,11 +55,16 @@ interface BookAppointmentModalProps {
   initialStartTime?: string;
   onClose: () => void;
   onBooked: () => void;
+  /** Practice mode only (design.md Component 9) — when set (a column click on
+   *  another therapist's calendar), books for THIS therapist instead of the
+   *  caller's own resolved id. My Calendar mode never passes this. */
+  fixedTherapistId?: number;
 }
 
-export function BookAppointmentModal({ initialDate, initialStartTime, onClose, onBooked }: BookAppointmentModalProps) {
+export function BookAppointmentModal({ initialDate, initialStartTime, onClose, onBooked, fixedTherapistId }: BookAppointmentModalProps) {
   const [clients, setClients] = useState<BackendClient[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
+  const [clientsError, setClientsError] = useState<string | null>(null);
 
   const [day, setDay] = useState(initialDate);
   const [clientId, setClientId] = useState('');
@@ -84,13 +89,26 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
 
   const duration = minutesBetweenTimes(startTime, endTime);
 
-  useEffect(() => {
+  const fetchClients = () => {
+    setClientsLoading(true);
+    setClientsError(null);
     // limit is the backend's max page size — this modal needs the full caseload for a
     // picker, not a paginated page. Server already de-dupes assigned + appointment-history clients.
     getMyClients({ limit: 100 })
       .then((res) => setClients(res.data))
-      .catch(() => setClients([]))
+      .catch((err) => {
+        setClients([]);
+        // A fetch failure must not look identical to "you have zero
+        // clients" — surface it so the therapist knows to retry rather than
+        // conclude their caseload is genuinely empty.
+        setClientsError(err instanceof Error ? err.message : 'Failed to load your client list');
+      })
       .finally(() => setClientsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchClients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -98,7 +116,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
     setSlotsLoading(true);
     (async () => {
       try {
-        const therapistId = await getMyTherapistId();
+        const therapistId = fixedTherapistId ?? (await getMyTherapistId());
         const res = await getDaySlots(therapistId, toDateKey(day));
         if (!cancelled) {
           setDaySlots(res.slots);
@@ -116,7 +134,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
     return () => {
       cancelled = true;
     };
-  }, [toDateKey(day)]);
+  }, [toDateKey(day), fixedTherapistId]);
 
   const dayOptions = Array.from({ length: 7 }, (_, i) => addDays(initialDate, i));
   const selectedClient = clients.find((c) => String(c.id) === clientId);
@@ -163,7 +181,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
     setSubmitting(true);
     setError(null);
     try {
-      const therapistId = await getMyTherapistId();
+      const therapistId = fixedTherapistId ?? (await getMyTherapistId());
       const [h, m] = startTime.split(':').map(Number);
       // Interpreted in the browser's own local timezone — the therapist is
       // booking against their own calendar, on their own device, so "4:30 PM"
@@ -308,7 +326,15 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
                   ))}
                 </div>
               )}
-              {!clientsLoading && clients.length === 0 && (
+              {!clientsLoading && clientsError && (
+                <p className="mt-1.5 flex items-center gap-2 text-xs text-[#8E4848]">
+                  Couldn't load your client list: {clientsError}
+                  <button type="button" onClick={fetchClients} className="font-semibold underline">
+                    Retry
+                  </button>
+                </p>
+              )}
+              {!clientsLoading && !clientsError && clients.length === 0 && (
                 <p className="mt-1.5 text-xs text-muted-text">No clients in your caseload yet.</p>
               )}
             </div>

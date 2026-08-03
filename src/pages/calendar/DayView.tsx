@@ -10,6 +10,8 @@ import { formatDayFull, isSameDay, getLeaveBlocksForDay } from './dateUtils';
 import { rescheduleAppointment } from '../../api/appointmentsBackend';
 import { type LeaveRecord } from '../../api/leave';
 import { type BlockedSlot } from '../../api/availability';
+import { toDateKey } from './dateUtils';
+import type { TherapistSummary } from '../../api/orgTherapists';
 
 interface DayViewProps {
   day: Date;
@@ -19,15 +21,22 @@ interface DayViewProps {
   search?: string;
   onSelectEvent: (ev: CalEvent) => void;
   onRescheduled?: () => void;
-  onSlotClick?: (date: Date, timeStr: string) => void;
+  onSlotClick?: (date: Date, timeStr: string, therapistId?: number) => void;
+  /** Practice mode only (design.md Component 9) — when both are present and
+   *  non-empty, renders one column per therapist instead of the single
+   *  events list. Drag-to-reschedule is disabled in this mode (see below). */
+  therapists?: TherapistSummary[];
+  eventsByTherapist?: Record<string, Record<number, CalEvent[]>>;
 }
 
-export function DayView({ day, events: eventsProp, leaves, blockedSlots, search = '', onSelectEvent, onRescheduled, onSlotClick }: DayViewProps) {
+export function DayView({ day, events: eventsProp, leaves, blockedSlots, search = '', onSelectEvent, onRescheduled, onSlotClick, therapists, eventsByTherapist }: DayViewProps) {
   const [events, setEvents] = useState<CalEvent[]>(eventsProp);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const q = search.trim().toLowerCase();
   const isToday = isSameDay(day, new Date());
   const scrollRef = useScrollToBusinessHours();
+  const isMultiTherapist = !!therapists?.length && !!eventsByTherapist;
+  const dayKey = toDateKey(day);
 
   useEffect(() => {
     setEvents(eventsProp);
@@ -35,7 +44,7 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    if (dragIdx === null) return;
+    if (isMultiTherapist || dragIdx === null) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const snapped = Math.max(0, Math.min(1880, Math.round(y / 40) * 40));
@@ -91,23 +100,41 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
         </div>
       </div>
 
+      {isMultiTherapist && (
+        <div className="grid border-b border-rule bg-canvas" style={{ gridTemplateColumns: `64px repeat(${therapists!.length}, 1fr)` }}>
+          <div />
+          {therapists!.map((t) => (
+            <div key={t.id} className="truncate border-l border-gray-200 px-2 py-2 text-center text-[11px] font-semibold text-muted-text" title={`${t.firstName} ${t.lastName}`}>
+              {t.firstName} {t.lastName}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div
         ref={scrollRef}
         className="relative grid max-h-[560px] overflow-y-auto"
-        style={{ gridTemplateColumns: '64px 1fr' }}
+        style={{ gridTemplateColumns: isMultiTherapist ? `64px repeat(${therapists!.length}, 1fr)` : '64px 1fr' }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
       >
         <HourGutter />
-        <div className="relative border-l border-gray-200">
+        {(isMultiTherapist ? therapists! : [undefined]).map((t) => {
+        const columnEvents = isMultiTherapist ? (eventsByTherapist![dayKey]?.[t!.id] ?? []) : events;
+        // Computed once per column, not once per event — leaves/blockedSlots are
+        // always the CALLER's own schedule, so only relevant outside Practice mode.
+        const leaveBlocks = !isMultiTherapist && leaves ? getLeaveBlocksForDay(day, leaves) : [];
+        const dayBlockedSlots = !isMultiTherapist && blockedSlots ? blockedSlots.filter(s => isSameDay(new Date(s.date), day)) : [];
+        return (
+        <div key={t ? t.id : 'mine'} className="relative border-l border-gray-200">
           {Array.from({ length: 24 }).map((_, h) => (
             <div key={h} className="h-20 border-b border-gray-200 flex flex-col">
-              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:00`)} />
-              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:30`)} />
+              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:00`, t?.id)} />
+              <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(day, `${String(h).padStart(2, '0')}:30`, t?.id)} />
             </div>
           ))}
 
-          {(leaves ? getLeaveBlocksForDay(day, leaves) : []).map((lb, i) => (
+          {leaveBlocks.map((lb, i) => (
             <div
               key={`lb-${lb.id}-${i}`}
               className="absolute left-0 right-0 z-[1] flex items-start justify-center pt-3 pointer-events-none"
@@ -123,14 +150,14 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
             </div>
           ))}
 
-          {(blockedSlots ? blockedSlots.filter((s) => isSameDay(new Date(s.date), day)) : []).map((bs, i) => {
+          {dayBlockedSlots.map((bs, i) => {
             const startH = bs.startHour + bs.startMinute / 60;
             const endH = bs.endHour + bs.endMinute / 60;
             const durationMin = (endH - startH) * 60;
             const reason = bs.reason?.toLowerCase() || '';
             const bg = reason.includes('lunch') ? '#F4E9CC' : reason.includes('break') ? '#E3ECE6' : '#E5E1F0';
             const border = reason.includes('lunch') ? '#C49840' : reason.includes('break') ? '#7A9E88' : '#9A90B8';
-            
+
             return (
               <div
                 key={`bs-${bs.id}-${i}`}
@@ -149,12 +176,10 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
             );
           })}
 
-          {events.map((ev, i) => {
+          {columnEvents.map((ev, i) => {
             const match = !q || (ev.name + ' ' + ev.type).toLowerCase().includes(q);
             const isPastEvent = ev.startTimeIso ? new Date(ev.startTimeIso).getTime() < Date.now() : false;
-            
-            const leaveBlocks = leaves ? getLeaveBlocksForDay(day, leaves) : [];
-            const dayBlockedSlots = blockedSlots ? blockedSlots.filter(s => isSameDay(new Date(s.date), day)) : [];
+
             const isConflicting = leaveBlocks.some(lb => {
               const evStart = ev.startHour;
               const evEnd = ev.startHour + ev.durationMin / 60;
@@ -172,7 +197,7 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
             return (
               <div
                 key={ev.id ?? ev.time + ev.name}
-                draggable={!isPastEvent}
+                draggable={!isMultiTherapist && !isPastEvent}
                 onDragStart={(e) => {
                   if (isPastEvent) return;
                   setDragIdx(i);
@@ -228,6 +253,8 @@ export function DayView({ day, events: eventsProp, leaves, blockedSlots, search 
 
           {isToday && <NowLine withLabel />}
         </div>
+        );
+        })}
       </div>
     </div>
   );

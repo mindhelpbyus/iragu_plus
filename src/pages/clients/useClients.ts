@@ -7,15 +7,16 @@ import { getClientMoods, getDateRangeForMoods, type DailyMood } from '../../api/
 import type { ClientRow } from './types';
 
 /**
- * Only a real org_owner/org_admin/admin (non-therapist Cognito role) uses the
+ * Only a real org_owner/admin (non-therapist Cognito role) uses the
  * paginated GET /clients admin list. A solo therapist has org_owner-level
- * *permissions* (see lib/roles.ts's effectiveRole elevation) but their
- * underlying role is still literally 'therapist' — they use their own
- * GET /therapist/me/clients caseload, same as any org-based therapist, not
- * the platform-wide admin listing. Check the raw role, not the elevated one.
+ * *permissions* (via the backend's OrgRulesConfig implicit elevation, see
+ * GET /me/org-context) but their underlying role is still literally
+ * 'therapist' — they use their own GET /therapist/me/clients caseload, same
+ * as any org-based therapist, not the platform-wide admin listing. Check the
+ * raw role, not the elevated one.
  */
 function usesAdminClientList(role: string | undefined): boolean {
-  return role === 'org_admin' || role === 'admin' || role === 'org_owner';
+  return role === 'admin' || role === 'org_owner';
 }
 
 const PAGE_SIZE = 10;

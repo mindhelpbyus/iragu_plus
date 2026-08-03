@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
-import { useAuthStore } from '../store/authStore';
+import { useOrgContext, hasMultiTherapistCalendars } from './calendar/useOrgContext';
 import { CalendarToolbar } from './calendar/CalendarToolbar';
 import { CalendarSidePanel, type SideTab } from './calendar/CalendarSidePanel';
 import { WeekView } from './calendar/WeekView';
 import { DayView } from './calendar/DayView';
 import { MonthView } from './calendar/MonthView';
+import { TherapistFilter } from './calendar/TherapistFilter';
 import { BlockTimeOffModal } from './calendar/BlockTimeOffModal';
 import { BookAppointmentModal } from './calendar/BookAppointmentModal';
 import { AppointmentDetailModal } from './calendar/AppointmentDetailModal';
@@ -16,7 +17,10 @@ import { useMyLeaves } from './calendar/useMyLeaves';
 import { useMyBlockedSlots } from './calendar/useMyBlockedSlots';
 import { useAvailabilityRange } from './calendar/useAvailabilityRange';
 import { useAutoSyncTimezone } from './calendar/useAutoSyncTimezone';
+import { useOrgAppointments } from './calendar/useOrgAppointments';
 import { groupAppointmentsByDate } from './calendar/appointmentAdapter';
+import { groupOrgAppointmentsByDateAndTherapist } from './calendar/orgAppointmentAdapter';
+import { getOrgTherapists, type TherapistSummary } from '../api/orgTherapists';
 import {
   startOfWeek,
   addDays,
@@ -28,13 +32,38 @@ import {
 } from './calendar/dateUtils';
 
 export default function CalendarPage() {
-  const user = useAuthStore((s) => s.user);
+  const { orgContext } = useOrgContext();
   // Calendar is only meaningful for someone with their own therapist
-  // schedule. org_owner/org_admin/admin without a therapist identity land
-  // here with nothing to fetch — GET /therapists/me would 404 for them, so
-  // don't attempt it (this is what crashed the screen for SuperAdmin before
-  // roles were defined).
-  const isTherapist = user?.role === 'therapist';
+  // schedule. A pure org_owner/admin management grant with no TherapistProfile
+  // lands here with nothing personal to fetch — GET /therapists/me would 404
+  // for them, so don't attempt it.
+  const hasTherapistProfile = orgContext?.hasTherapistProfile ?? false;
+  // The mode switch (My Calendar / Practice Calendar) only makes sense for
+  // someone who has BOTH a personal schedule AND a real, permission-backed
+  // org-wide grant to switch into — a solo/independent therapist has
+  // org_owner-level *permissions* (via the backend's OrgRulesConfig implicit
+  // elevation) but no `orgRoles` grant and no colleagues, so there is
+  // nothing to switch to. Gated on the actual `calendar:view_org`
+  // permission (hasMultiTherapistCalendars), not just "has some org role
+  // row" — a future org role that holds orgRoles but not calendar:view_org
+  // must not surface Practice mode or fire org-scoped fetches for it.
+  const canViewPractice = hasMultiTherapistCalendars(orgContext);
+  const showModeSwitch = hasTherapistProfile && canViewPractice;
+  const [mode, setMode] = useState<'mine' | 'practice'>('mine');
+  // A pure management grant (no TherapistProfile at all) has no "mine" to
+  // show — force Practice mode and skip rendering the switch (Group H/task 32,
+  // [LATER], is what actually renders anything for 'practice' mode; for now
+  // this just prevents a personal-schedule fetch attempt for such a caller).
+  const effectiveMode = hasTherapistProfile ? mode : 'practice';
+  const isTherapist = hasTherapistProfile && effectiveMode === 'mine';
+  // Gate the actual Practice-mode data fetches (getOrgTherapists/
+  // getOrgAppointments) on the real calendar:view_org permission, not just
+  // "effectiveMode resolved to practice" — a management-only grant that for
+  // some reason lacks that permission must not fire org-scoped requests the
+  // frontend has no basis to believe will succeed; the backend's 403 is the
+  // authorization boundary, but the frontend shouldn't fire requests it
+  // already knows (from its own permission set) are ungranted.
+  const isPractice = effectiveMode === 'practice' && canViewPractice;
 
   const [view, setView] = useState<CalView>('week');
   const [panelOpen, setPanelOpen] = useState(true);
@@ -46,11 +75,45 @@ export default function CalendarPage() {
   const [bookOpen, setBookOpen] = useState(false);
   const [bookingDate, setBookingDate] = useState<Date | null>(null);
   const [bookingTime, setBookingTime] = useState<string | undefined>(undefined);
+  const [bookingTherapistId, setBookingTherapistId] = useState<number | undefined>(undefined);
   const [selectedEvent, setSelectedEvent] = useState<CalEvent | null>(null);
 
-  const handleBookSlot = (d: Date, timeStr?: string) => {
+  // Practice mode: the org's therapist roster (for TherapistFilter) and which
+  // subset is currently selected. undefined = whole org (no filter applied).
+  const [orgTherapists, setOrgTherapists] = useState<TherapistSummary[]>([]);
+  const [orgTherapistsError, setOrgTherapistsError] = useState<string | null>(null);
+  const [selectedTherapistIds, setSelectedTherapistIds] = useState<number[] | undefined>(undefined);
+
+  const fetchOrgTherapists = useCallback(() => {
+    if (!isPractice) return;
+    let cancelled = false;
+    setOrgTherapistsError(null);
+    getOrgTherapists()
+      .then((rows) => {
+        if (!cancelled) setOrgTherapists(rows);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setOrgTherapists([]);
+        // A fetch failure must not look identical to "this org has no
+        // therapists" — surface it so the user knows to retry rather than
+        // concluding the practice roster is genuinely empty.
+        setOrgTherapistsError(err instanceof Error ? err.message : 'Failed to load the practice therapist list');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPractice]);
+
+  useEffect(() => {
+    const cleanup = fetchOrgTherapists();
+    return cleanup;
+  }, [fetchOrgTherapists]);
+
+  const handleBookSlot = (d: Date, timeStr?: string, therapistId?: number) => {
     setBookingDate(d);
     setBookingTime(timeStr);
+    setBookingTherapistId(therapistId);
     setBookOpen(true);
   };
 
@@ -71,13 +134,33 @@ export default function CalendarPage() {
   const eventsByDate = useMemo(() => groupAppointmentsByDate(appointments), [appointments]);
   const hasEventsOn = (dateKey: string) => (eventsByDate[dateKey]?.length ?? 0) > 0;
 
+  // Practice mode data source — undefined selectedTherapistIds means "whole
+  // org" server-side (design.md Component 7/8).
+  const {
+    appointments: orgAppointments,
+    loading: orgLoading,
+    error: orgError,
+    refetch: refetchOrg,
+  } = useOrgAppointments(rangeStart, rangeEnd, selectedTherapistIds, isPractice);
+  const eventsByTherapist = useMemo(
+    () => groupOrgAppointmentsByDateAndTherapist(orgAppointments),
+    [orgAppointments],
+  );
+  // Task 38 — an explicit empty selection (Select None) shows a message
+  // instead of an empty-looking grid; distinct from `undefined` (whole org).
+  const isEmptySelection = isPractice && selectedTherapistIds !== undefined && selectedTherapistIds.length === 0;
+  const therapistsForViews = isPractice
+    ? orgTherapists.filter((t) => selectedTherapistIds === undefined || selectedTherapistIds.includes(t.id))
+    : undefined;
+
   const searchMatchCount = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return 0;
-    return Object.values(eventsByDate)
-      .flat()
-      .filter((ev) => (ev.name + ' ' + ev.type).toLowerCase().includes(q)).length;
-  }, [search, eventsByDate]);
+    const events = isPractice
+      ? Object.values(eventsByTherapist).flatMap((byTherapist) => Object.values(byTherapist).flat())
+      : Object.values(eventsByDate).flat();
+    return events.filter((ev) => (ev.name + ' ' + ev.type).toLowerCase().includes(q)).length;
+  }, [search, eventsByDate, eventsByTherapist, isPractice]);
 
   // MiniCalendar's visible month grid (42 days) — fetched independently of
   // the main view's range since the mini-calendar can be browsing a
@@ -156,15 +239,46 @@ export default function CalendarPage() {
           }}
           onBlockTimeOff={() => setBlockOpen(true)}
           onBook={() => handleBookSlot(anchorDate)}
+          showModeSwitch={showModeSwitch}
+          mode={effectiveMode}
+          onModeChange={setMode}
+          therapistFilterSlot={
+            isPractice ? (
+              <TherapistFilter
+                therapists={orgTherapists}
+                selectedIds={selectedTherapistIds}
+                onChange={setSelectedTherapistIds}
+              />
+            ) : undefined
+          }
         />
 
-        {error && (
+        {!isPractice && error && (
           <div className="mx-auto mb-4 max-w-[1400px] rounded-lg border border-[#E5C6C6] bg-[#FBEFEF] px-4 py-2.5 text-sm text-[#8E4848]">
             Couldn't load your appointments: {error}
           </div>
         )}
 
-        {!isTherapist && (
+        {isPractice && orgError && (
+          <div className="mx-auto mb-4 max-w-[1400px] rounded-lg border border-[#E5C6C6] bg-[#FBEFEF] px-4 py-2.5 text-sm text-[#8E4848]">
+            Couldn't load the practice calendar: {orgError}
+          </div>
+        )}
+
+        {isPractice && orgTherapistsError && (
+          <div className="mx-auto mb-4 flex max-w-[1400px] items-center justify-between gap-3 rounded-lg border border-[#E5C6C6] bg-[#FBEFEF] px-4 py-2.5 text-sm text-[#8E4848]">
+            <span>Couldn't load the practice therapist list: {orgTherapistsError}</span>
+            <button
+              type="button"
+              onClick={fetchOrgTherapists}
+              className="flex-shrink-0 rounded-md border border-[#E5C6C6] px-2.5 py-1 text-xs font-semibold text-[#8E4848] hover:bg-[#F4E3E3]"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!isPractice && !isTherapist && (
           <div className="mx-auto mb-4 max-w-[1400px] rounded-lg border border-rule bg-surface-warm px-4 py-2.5 text-sm text-muted-text">
             This calendar shows a therapist's own schedule. Your account doesn't have a personal
             schedule to display — practice-wide scheduling views are on the roadmap.
@@ -199,12 +313,17 @@ export default function CalendarPage() {
           </button>
 
           <div className="min-w-0 flex-1">
-            {loading && (
+            {(isPractice ? orgLoading : loading) && (
               <div className="flex h-[624px] items-center justify-center rounded-[14px] border border-rule bg-surface text-sm text-muted-text">
                 Loading appointments…
               </div>
             )}
-            {!loading && view === 'week' && (
+            {!(isPractice ? orgLoading : loading) && isEmptySelection && (
+              <div className="flex h-[624px] items-center justify-center rounded-[14px] border border-rule bg-surface text-sm text-muted-text">
+                Select one or more therapists to view their calendars.
+              </div>
+            )}
+            {!(isPractice ? orgLoading : loading) && !isEmptySelection && view === 'week' && (
               <WeekView
                 weekDates={weekDates}
                 eventsByDate={eventsByDate}
@@ -214,9 +333,11 @@ export default function CalendarPage() {
                 onSelectDay={goDay}
                 onSelectEvent={setSelectedEvent}
                 onSlotClick={handleBookSlot}
+                therapists={therapistsForViews}
+                eventsByTherapist={isPractice ? eventsByTherapist : undefined}
               />
             )}
-            {!loading && view === 'day' && (
+            {!(isPractice ? orgLoading : loading) && !isEmptySelection && view === 'day' && (
               <DayView
                 day={anchorDate}
                 events={eventsByDate[toDateKey(anchorDate)] ?? []}
@@ -226,14 +347,19 @@ export default function CalendarPage() {
                 onSelectEvent={setSelectedEvent}
                 onRescheduled={refetch}
                 onSlotClick={handleBookSlot}
+                therapists={therapistsForViews}
+                eventsByTherapist={isPractice ? eventsByTherapist : undefined}
               />
             )}
-            {!loading && view === 'month' && (
+            {!(isPractice ? orgLoading : loading) && !isEmptySelection && view === 'month' && (
               <MonthView
                 monthAnchor={anchorDate}
                 eventsByDate={eventsByDate}
                 onSelectDay={goDay}
                 onSelectEvent={setSelectedEvent}
+                search={search}
+                therapists={therapistsForViews}
+                eventsByTherapist={isPractice ? eventsByTherapist : undefined}
               />
             )}
           </div>
@@ -252,18 +378,19 @@ export default function CalendarPage() {
         />
       )}
       {bookOpen && (
-        <BookAppointmentModal 
-          initialDate={bookingDate || anchorDate} 
+        <BookAppointmentModal
+          initialDate={bookingDate || anchorDate}
           initialStartTime={bookingTime}
-          onClose={() => { setBookOpen(false); setBookingTime(undefined); }} 
-          onBooked={refetch} 
+          fixedTherapistId={bookingTherapistId}
+          onClose={() => { setBookOpen(false); setBookingTime(undefined); setBookingTherapistId(undefined); }}
+          onBooked={() => { refetch(); refetchOrg(); }}
         />
       )}
       {selectedEvent && (
         <AppointmentDetailModal
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
-          onChanged={refetch}
+          onChanged={() => { refetch(); refetchOrg(); }}
         />
       )}
     </>

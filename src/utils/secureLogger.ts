@@ -229,6 +229,12 @@ class SecureLogger {
             'password', 'ssn', 'social', 'dob', 'dateofbirth',
             'diagnosis', 'medical', 'health', 'treatment', 'medication',
             'insurance', 'creditcard', 'cardnumber', 'cvv', 'token', 'secret',
+            // Free-text clinical/note content — never structurally distinguishable
+            // from "safe" text, so redact by key name outright.
+            'note', 'content', 'summary', 'reason', 'consultingreason',
+            // Client/user identity fields — PII even outside a clinical context.
+            'clientname', 'firstname', 'lastname', 'fullname', 'email', 'phone',
+            'address', 'city', 'state', 'zipcode', 'zip',
         ];
 
         const lowerField = fieldName.toLowerCase();

@@ -64,37 +64,47 @@ export interface RegisterRequest {
  * the app checks ONE value. Unknown values fall back to the least-privileged
  * role.
  *
- * Naming note: the underlying Cognito group is still literally `SuperAdmin`
- * (renaming the group itself is a backend-initial infra change shared with
- * Ataraxia/billing_payment — out of scope here) but this app displays and
- * reasons about that role as **org_owner** — the person who owns the
- * organization (or, if solo, owns their own independent practice). See
- * roles.ts for what each canonical role can actually do.
+ * `iragu_plus_saas` has NO platform-wide caller concept at all — every user
+ * belongs to exactly one organization, or none (a solo/independent
+ * practitioner). `org_owner` and `admin` come from the dedicated `OrgOwner`
+ * and `PracticeAdmin` Cognito groups (backend-initial/infrastructure/lib/
+ * auth-stack.ts) — NOT from the platform-operator `SuperAdmin`/`Admin`
+ * groups, which remain in backend-initial for a separate, future
+ * Bedrock-internal tool this app never reaches into. See
+ * docs/specs/org-roles-and-calendar/requirements.md Requirement 0.
+ *
+ * Fine-grained permissions and display labels are DB data — see
+ * `pages/calendar/useOrgContext.ts`'s `GET /me/org-context` — not hardcoded
+ * here or in lib/roles.ts.
  */
-export type CanonicalRole = 'org_owner' | 'org_admin' | 'admin' | 'therapist' | 'client';
+export type CanonicalRole = 'org_owner' | 'admin' | 'therapist' | 'client';
 
 /**
- * Cognito User Pool group names → canonical app role.
- *
- * The groups actually provisioned in AWS today (backend-initial/infrastructure/lib/auth-stack.ts)
- * are: `SuperAdmin`, `Admin`, `Therapists`, `PendingTherapists`, `Clients` —
- * there is no `OrgAdmin` group yet. `org_admin` below is a forward-declared
- * canonical role with no real group producing it yet; until that group
- * exists, `Admin` maps to the platform-wide `admin` role, not `org_admin`.
+ * Cognito User Pool group names → canonical app role. Only the groups this
+ * app actually recognizes appear here — `SuperAdmin`, `Admin`, `superadmin`,
+ * `super_admin`, `platform_admin`, and `account_owner` are deliberately
+ * ABSENT (Requirement 0.3): a token carrying only those platform-operator
+ * groups has no alias match here and falls through to the least-privileged
+ * `client` default (Requirement 0.4), exactly like any other unrecognized
+ * group.
  */
 const ROLE_ALIASES: Record<string, CanonicalRole> = {
   // AWS Cognito groups (lowercased)
-  superadmin: 'org_owner',
-  admin: 'admin',
+  orgowner: 'org_owner',
+  practiceadmin: 'admin',
   therapist: 'therapist',
   client: 'client',
+  // `PendingTherapists` (a therapist awaiting admin approval) maps to the
+  // same 'therapist' role as `Therapists` on the backend — see
+  // backend-initial's caller-identity.ts GROUP_TO_ROLE and
+  // cognito-post-confirmation's GROUP_TO_DB_ROLE, both of which treat the two
+  // groups identically. The trailing-`s`-strip below turns this key into
+  // `pendingtherapist`, which would otherwise fall through to the 'client'
+  // default and wrongly lock a pending therapist out of this app.
+  pendingtherapist: 'therapist',
   // tolerant variants
-  super_admin: 'org_owner',
-  platform_admin: 'org_owner',
   org_owner: 'org_owner',
-  account_owner: 'org_owner',
-  org_admin: 'org_admin',
-  organization_admin: 'org_admin',
+  practice_admin: 'admin',
   provider: 'therapist',
   counsellor: 'therapist',
   counselor: 'therapist',
@@ -102,7 +112,7 @@ const ROLE_ALIASES: Record<string, CanonicalRole> = {
 };
 
 /** Privilege order, highest first — used to resolve users in multiple groups. */
-const ROLE_PRECEDENCE: CanonicalRole[] = ['org_owner', 'org_admin', 'admin', 'therapist', 'client'];
+const ROLE_PRECEDENCE: CanonicalRole[] = ['org_owner', 'admin', 'therapist', 'client'];
 
 /** Map a single Cognito group name to a canonical role. Tolerant of case,
  *  whitespace, hyphen/underscore, and trailing plural (e.g. `Therapists`). */

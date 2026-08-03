@@ -1,5 +1,6 @@
 import { type CalEvent } from './calendarConstants';
 import { addDays, isSameDay, startOfWeek, toDateKey } from './dateUtils';
+import type { TherapistSummary } from '../../api/orgTherapists';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -15,11 +16,29 @@ interface MonthViewProps {
   eventsByDate: Record<string, CalEvent[]>;
   onSelectDay: (d: Date) => void;
   onSelectEvent: (ev: CalEvent) => void;
+  /** Matches WeekView/DayView's search dimming — non-matching chips render at
+   *  reduced opacity instead of being hidden, so the toolbar's match-count
+   *  badge and the grid stay visually consistent across all three views. */
+  search?: string;
+  /** Practice mode only (design.md Component 9) — when present, each day
+   *  cell's chips are flattened across all selected therapists (already
+   *  type-colored via calendarConstants' TYPE_COLOR, same as My Calendar
+   *  mode) rather than reading eventsByDate for the caller's own schedule. */
+  therapists?: TherapistSummary[];
+  eventsByTherapist?: Record<string, Record<number, CalEvent[]>>;
 }
 
-export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEvent }: MonthViewProps) {
+export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEvent, search, therapists, eventsByTherapist }: MonthViewProps) {
   const cells = monthGridDates(monthAnchor);
   const today = new Date();
+  const isMultiTherapist = !!therapists?.length && !!eventsByTherapist;
+  const q = (search || '').trim().toLowerCase();
+
+  function eventsForDay(dateKey: string): CalEvent[] {
+    if (!isMultiTherapist) return eventsByDate[dateKey] ?? [];
+    const byTherapist = eventsByTherapist![dateKey] ?? {};
+    return Object.values(byTherapist).flat();
+  }
 
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-[14px] border border-rule bg-surface shadow-[0_1px_2px_0_rgba(28,24,18,.04)]">
@@ -35,7 +54,7 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
         {cells.map((d) => {
           const otherMonth = d.getMonth() !== monthAnchor.getMonth();
           const isToday = isSameDay(d, today);
-          const events = eventsByDate[toDateKey(d)] ?? [];
+          const events = eventsForDay(toDateKey(d));
           const visible = events.slice(0, 3);
           const more = events.length - visible.length;
 
@@ -62,6 +81,7 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
               <div className="flex flex-col gap-1">
                 {visible.map((ev) => {
                   const colors = ev.colors;
+                  const match = !q || (ev.name + ' ' + ev.type).toLowerCase().includes(q);
                   return (
                     <button
                       key={ev.id ?? ev.time + ev.name}
@@ -71,7 +91,7 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
                         onSelectEvent(ev);
                       }}
                       className="truncate rounded px-1.5 py-0.5 text-left text-[10px] font-medium hover:brightness-95"
-                      style={{ background: colors.bg, color: colors.fg, borderLeft: `2px solid ${colors.border}` }}
+                      style={{ background: colors.bg, color: colors.fg, borderLeft: `2px solid ${colors.border}`, opacity: match ? 1 : 0.35 }}
                     >
                       {ev.name}
                     </button>

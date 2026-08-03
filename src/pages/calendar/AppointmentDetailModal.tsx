@@ -5,6 +5,7 @@ import {
   rescheduleAppointment,
   updateAppointmentStatus,
   updateAppointmentColor,
+  updateAppointmentType,
   cancelAppointment,
   type AppointmentType,
 } from '../../api/appointmentsBackend';
@@ -49,11 +50,13 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
   const dayOptions = Array.from({ length: 10 }, (_, i) => addDays(initialStart, i - 2));
   const isCancelled = event.status === 'cancelled' || event.status === 'no-show';
   const colorChanged = (colorOverride ?? null) !== (event.colorOverride ?? null);
+  const typeChanged = type !== event.rawType;
   const dirty =
     toDateKey(day) !== toDateKey(initialStart) ||
     startTime !== `${String(initialStart.getHours()).padStart(2, '0')}:${String(initialStart.getMinutes()).padStart(2, '0')}` ||
     duration !== event.durationMin ||
-    colorChanged;
+    colorChanged ||
+    typeChanged;
 
   const handleSave = async () => {
     if (!event.id) return;
@@ -73,11 +76,8 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
       if (colorChanged) {
         await updateAppointmentColor(String(event.id), colorOverride);
       }
-      if (type !== event.rawType) {
-        // Type isn't part of PUT /appointments/:id's status/time contract on
-        // backend-initial today — status is the only mutable field besides
-        // time. Surface this instead of silently dropping the change.
-        toast.error('Appointment type can’t be changed after booking yet.');
+      if (typeChanged) {
+        await updateAppointmentType(String(event.id), type);
       }
       toast.success('Appointment updated');
       onChanged();

@@ -24,7 +24,9 @@ import {
   Settings,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { roleLabel } from '../../lib/roles';
+import { useOrgContext, currentRoleLabel, hasPermission, clearOrgContextCache } from '../../pages/calendar/useOrgContext';
+import { clearMyTherapistIdCache } from '../../api/therapistMe';
+import type { OrgContext } from '../../api/orgContext';
 import iraguPlusMark from '../../assets/brand/iragu-plus-mark.svg';
 
 interface NavItem {
@@ -33,7 +35,19 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   /** TODO: replace with real counts from backend-initial once /calendar and /clients list endpoints are wired here. */
   badge?: number;
+  /** If set, this item only renders when the caller holds AT LEAST ONE of
+   *  these permission keys (GET /me/org-context) — never a hardcoded role
+   *  check. Used for the org_owner-only settings:* capabilities. */
+  requiresAnyPermission?: string[];
 }
+
+const SETTINGS_PERMISSIONS = [
+  'settings:plan_info',
+  'settings:team_members',
+  'settings:demo_client',
+  'settings:online_payments',
+  'settings:payroll',
+];
 
 interface NavSection {
   label: string;
@@ -79,10 +93,26 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/analytics', label: 'Analytics', icon: BarChart3 },
       { to: '/activity', label: 'Activity', icon: Activity },
-      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/settings', label: 'Settings', icon: Settings, requiresAnyPermission: SETTINGS_PERMISSIONS },
     ],
   },
 ];
+
+/** True when the item has no permission gate, or the caller holds at least
+ *  one of the gate's required permission keys. Never a hardcoded role check —
+ *  reads GET /me/org-context's resolved `permissions` array.
+ *
+ *  While org-context is still loading, gated items default to VISIBLE rather
+ *  than hidden — most Phase 1 users are solo therapists who end up with
+ *  org_owner-level permissions, so hiding-then-popping-in on every page load
+ *  would be the common case, not the rare one. `loading` becomes false the
+ *  moment the real answer is known, at which point a genuinely ungranted
+ *  item disappears (a one-time correction, not a flicker loop). */
+export function isNavItemVisible(item: NavItem, orgContext: OrgContext | null, loading: boolean): boolean {
+  if (!item.requiresAnyPermission) return true;
+  if (loading) return true;
+  return item.requiresAnyPermission.some((p) => hasPermission(orgContext, p));
+}
 
 const FOOTER_ITEMS: NavItem[] = [
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
@@ -94,6 +124,7 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  const { orgContext, loading: orgContextLoading } = useOrgContext();
 
   const initials = (user?.name ?? 'Therapist')
     .split(' ')
@@ -104,6 +135,11 @@ export function AppSidebar() {
 
   const handleLogout = async () => {
     await logout();
+    // authStore.logout() clears sessionStorage/React Query, but these two
+    // module-level caches live outside both — clear them explicitly so a
+    // subsequent same-tab login never resolves a value from this session.
+    clearMyTherapistIdCache();
+    clearOrgContextCache();
     navigate('/login', { replace: true });
   };
 
@@ -169,7 +205,7 @@ export function AppSidebar() {
                 {section.label}
               </div>
             )}
-            {section.items.map((item) => (
+            {section.items.filter((item) => isNavItemVisible(item, orgContext, orgContextLoading)).map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -226,7 +262,7 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-medium text-ink">{user?.name ?? 'Therapist'}</div>
-              <div className="truncate text-[11px] text-muted-text">{roleLabel(user?.role)}</div>
+              <div className="truncate text-[11px] text-muted-text">{currentRoleLabel(orgContext)}</div>
             </div>
           )}
           <button

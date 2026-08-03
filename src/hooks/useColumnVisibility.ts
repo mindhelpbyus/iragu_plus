@@ -9,13 +9,16 @@ export interface ColumnDef {
 
 /**
  * Column visibility state for a list table's "choose columns" picker,
- * persisted to localStorage per table so the choice survives a refresh.
+ * persisted to sessionStorage per table so the choice survives a refresh
+ * within the session — sessionStorage (not localStorage) to match the rest
+ * of the app's policy of clearing all client-side state on logout/tab close,
+ * even though this particular data (which columns are hidden) isn't PHI.
  * `storageKey` should be unique per table, e.g. "ataraxia.clients.columns".
  */
 export function useColumnVisibility(storageKey: string, columns: ColumnDef[]) {
   const [hidden, setHidden] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(storageKey);
+      const raw = sessionStorage.getItem(storageKey);
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
     } catch {
       return new Set();
@@ -30,9 +33,9 @@ export function useColumnVisibility(storageKey: string, columns: ColumnDef[]) {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       try {
-        localStorage.setItem(storageKey, JSON.stringify([...next]));
+        sessionStorage.setItem(storageKey, JSON.stringify([...next]));
       } catch {
-        // localStorage unavailable (private browsing etc.) — visibility just won't persist.
+        // sessionStorage unavailable (private browsing etc.) — visibility just won't persist.
       }
       return next;
     });

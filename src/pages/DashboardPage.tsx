@@ -16,10 +16,18 @@ const METRIC_ICONS = [
   <ActivityIcon key="mood" />,
 ];
 
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const firstName = (user?.name ?? 'there').replace(/^Dr\.?\s*/i, '').split(' ')[0];
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
     <>
@@ -39,8 +47,8 @@ export default function DashboardPage() {
       <main className="flex-1 overflow-y-auto p-7">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-end justify-between gap-4 pb-6">
           <div>
-            <h2 className="text-[28px] font-medium tracking-tight text-ink">Good morning, {firstName}</h2>
-            <p className="mt-1 text-sm text-muted-text">Thursday, 16 July · You have 6 sessions today</p>
+            <h2 className="text-[28px] font-medium tracking-tight text-ink">{getGreeting()}, {firstName}</h2>
+            <p className="mt-1 text-sm text-muted-text">{today} · You have 6 sessions today</p>
           </div>
           <div className="flex gap-2.5">
             <Button variant="outline" className="h-10 gap-2" onClick={() => navigate('/calendar')}>

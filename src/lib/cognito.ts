@@ -244,7 +244,35 @@ export function cognitoSignOut(): void {
   if (user) user.signOut();
 }
 
-// ─── Federated Google sign-in (Hosted UI, authorization-code flow) ──────────────
+// ─── Federated Google sign-in (Hosted UI, authorization-code flow + PKCE) ───────
+// PKCE (RFC 7636) is mandatory here, not optional hardening: this is a PUBLIC
+// client (no client secret — see the file header), so the authorization code
+// alone is not proof the token request came from the same app instance that
+// started the flow. Without a code_verifier tied to the original request, an
+// intercepted/leaked `code` (e.g. via a referrer header, browser history, or a
+// malicious app on the same device intercepting the redirect) could be
+// exchanged for tokens by anyone who obtains it. The verifier is generated
+// fresh per attempt and never leaves this tab, so possession of `code` alone
+// is no longer sufficient.
+
+const PKCE_VERIFIER_KEY = '__cognito_pkce_verifier__';
+
+function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function generateCodeVerifier(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+async function deriveCodeChallenge(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
 
 /**
  * Redirect to the Cognito Hosted UI for Google sign-in. Cognito handles the OAuth
@@ -253,24 +281,40 @@ export function cognitoSignOut(): void {
  *
  * NOTE: OAuthRedirectUri must be registered as a callback URL on the app client.
  */
-export function startGoogleSignIn(): void {
+export async function startGoogleSignIn(): Promise<void> {
+  const verifier = generateCodeVerifier();
+  const challenge = await deriveCodeChallenge(verifier);
+  // sessionStorage, not tokenStorage — this must survive exactly one
+  // same-tab redirect round-trip, not persist as a credential.
+  (tokenStorage ?? window.sessionStorage)?.setItem(PKCE_VERIFIER_KEY, verifier);
+
   const params = new URLSearchParams({
     client_id: ClientId,
     response_type: 'code',
     scope: 'email openid profile',
     redirect_uri: OAuthRedirectUri,
     identity_provider: 'Google',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
   });
   window.location.href = `${hostedUiBase()}/oauth2/authorize?${params.toString()}`;
 }
 
 /** Exchange a Hosted-UI authorization code for Cognito tokens (called on /callback). */
 export async function exchangeCodeForTokens(code: string): Promise<CognitoTokens> {
+  const storage = tokenStorage ?? window.sessionStorage;
+  const verifier = storage?.getItem(PKCE_VERIFIER_KEY);
+  storage?.removeItem(PKCE_VERIFIER_KEY); // single-use, whether or not the exchange succeeds
+  if (!verifier) {
+    throw new Error('Missing PKCE verifier — the sign-in attempt may have started in a different tab/session.');
+  }
+
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: ClientId,
     code,
     redirect_uri: OAuthRedirectUri,
+    code_verifier: verifier,
   });
   const res = await fetch(`${hostedUiBase()}/oauth2/token`, {
     method: 'POST',

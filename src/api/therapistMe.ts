@@ -32,3 +32,11 @@ export function getMyTherapistId(): Promise<number> {
   }
   return cached;
 }
+
+/** Call on logout — this module-level cache is not user-keyed (unlike
+ *  useOrgContext's), so without an explicit reset a subsequent login in the
+ *  same tab (without a full page navigation) could resolve a stale numeric
+ *  id from the PREVIOUS session before its first real /therapists/me call. */
+export function clearMyTherapistIdCache(): void {
+  cached = null;
+}

@@ -1,4 +1,5 @@
 import { Search, ChevronLeft, ChevronRight, CircleSlash, Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { CalView } from './calendarConstants';
 
 interface CalendarToolbarProps {
@@ -13,6 +14,16 @@ interface CalendarToolbarProps {
   onToday: () => void;
   onBlockTimeOff: () => void;
   onBook: () => void;
+  /** My Calendar / Practice Calendar switch — only rendered when the caller has
+   *  both a personal schedule AND a real org-wide grant to switch into. */
+  showModeSwitch?: boolean;
+  mode?: 'mine' | 'practice';
+  onModeChange?: (mode: 'mine' | 'practice') => void;
+  /** Practice mode's TherapistFilter — rendered inline, directly before the
+   *  search box, so its dropdown panel opens within the toolbar's own flex
+   *  flow instead of a separately-positioned wrapper that can overflow past
+   *  the page edge or overlap the search box's own dropdown. */
+  therapistFilterSlot?: ReactNode;
 }
 
 const VIEWS: { id: CalView; label: string }[] = [
@@ -33,6 +44,10 @@ export function CalendarToolbar({
   onToday,
   onBlockTimeOff,
   onBook,
+  showModeSwitch = false,
+  mode = 'mine',
+  onModeChange,
+  therapistFilterSlot,
 }: CalendarToolbarProps) {
   return (
     <div className="mx-auto mb-6 flex max-w-[1400px] flex-wrap items-end justify-between gap-3">
@@ -41,7 +56,14 @@ export function CalendarToolbar({
         <p className="mt-1 text-sm text-muted-text">{subtitle}</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {therapistFilterSlot && (
+          <>
+            {therapistFilterSlot}
+            <div className="h-6 w-px bg-rule" />
+          </>
+        )}
+
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-[13px] w-[13px] -translate-y-1/2 text-muted-text" />
           <input
@@ -82,6 +104,26 @@ export function CalendarToolbar({
         >
           <ChevronRight className="h-4 w-4" />
         </button>
+
+        {showModeSwitch && (
+          <>
+            <div className="mx-1.5 h-6 w-px bg-rule" />
+            {(['mine', 'practice'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onModeChange?.(m)}
+                className={`h-8 rounded-lg px-3 text-[13px] transition-colors ${
+                  m === mode
+                    ? 'border border-rule bg-surface font-semibold text-action-dark'
+                    : 'border border-transparent font-medium text-[#48382E] hover:bg-action-light/40'
+                }`}
+              >
+                {m === 'mine' ? 'My Calendar' : 'Practice Calendar'}
+              </button>
+            ))}
+          </>
+        )}
 
         <div className="mx-1.5 h-6 w-px bg-rule" />
 

@@ -8,6 +8,7 @@ import { formatDayShort, isSameDay, toDateKey, getLeaveBlocksForDay } from './da
 
 import { type LeaveRecord } from '../../api/leave';
 import { type BlockedSlot } from '../../api/availability';
+import type { TherapistSummary } from '../../api/orgTherapists';
 
 interface WeekViewProps {
   weekDates: Date[];
@@ -17,28 +18,47 @@ interface WeekViewProps {
   search?: string;
   onSelectDay: (d: Date) => void;
   onSelectEvent: (ev: CalEvent) => void;
-  onSlotClick?: (date: Date, timeStr: string) => void;
+  onSlotClick?: (date: Date, timeStr: string, therapistId?: number) => void;
+  /** Practice mode only (design.md Component 9) — when both this and eventsByTherapist
+   *  are present and non-empty, renders one column per therapist per day. Absent = today's single-column-per-day rendering, unchanged. */
+  therapists?: TherapistSummary[];
+  eventsByTherapist?: Record<string, Record<number, CalEvent[]>>;
 }
 
-export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search, onSelectDay, onSelectEvent, onSlotClick }: WeekViewProps) {
+export function WeekView({
+  weekDates,
+  eventsByDate,
+  leaves,
+  blockedSlots,
+  search,
+  onSelectDay,
+  onSelectEvent,
+  onSlotClick,
+  therapists,
+  eventsByTherapist,
+}: WeekViewProps) {
   const q = (search || '').trim().toLowerCase();
   const scrollRef = useScrollToBusinessHours();
   const today = new Date();
+  const isMultiTherapist = !!therapists?.length && !!eventsByTherapist;
+  const subColsPerDay = isMultiTherapist ? therapists!.length : 1;
+  const gridTemplateColumns = `64px repeat(${weekDates.length * subColsPerDay}, 1fr)`;
 
   return (
     <div className="h-[624px] w-full min-w-0 overflow-hidden rounded-[14px] border border-rule bg-surface shadow-[0_1px_2px_0_rgba(28,24,18,.04)]">
-      <div className="grid border-b border-rule bg-canvas" style={{ gridTemplateColumns: '64px repeat(7, 1fr)' }}>
+      <div className="grid border-b border-rule bg-canvas" style={{ gridTemplateColumns }}>
         <div className="flex items-end justify-center pb-2">
           <Clock className="h-3.5 w-3.5 text-muted-text" />
         </div>
         {weekDates.map((d) => {
           const isToday = isSameDay(d, today);
-          return (
+          const dateHeader = (
             <button
-              key={toDateKey(d)}
+              key={`${toDateKey(d)}-date`}
               type="button"
               onClick={() => onSelectDay(d)}
-              className="border-l border-gray-200 px-2 pb-3 pt-2.5 text-center"
+              className="border-l border-gray-200 px-2 pb-1 pt-2.5 text-center"
+              style={isMultiTherapist ? { gridColumn: `span ${subColsPerDay}` } : undefined}
             >
               <div className={`text-[11px] font-semibold uppercase ${isToday ? 'text-action-dark' : 'text-muted-text'}`}>
                 {formatDayShort(d)}
@@ -51,27 +71,51 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
               </div>
             </button>
           );
+          return dateHeader;
         })}
+        {isMultiTherapist &&
+          weekDates.map((d) =>
+            therapists!.map((t) => (
+              <div
+                key={`${toDateKey(d)}-${t.id}`}
+                className="truncate border-l border-gray-200 px-1.5 pb-2 text-center text-[9.5px] font-medium text-muted-text"
+                title={`${t.firstName} ${t.lastName}`}
+              >
+                {t.firstName} {t.lastName[0]}.
+              </div>
+            )),
+          )}
       </div>
 
-      <div ref={scrollRef} className="grid max-h-[560px] overflow-y-auto" style={{ gridTemplateColumns: '64px repeat(7, 1fr)' }}>
+      <div ref={scrollRef} className="grid max-h-[560px] overflow-y-auto" style={{ gridTemplateColumns }}>
         <HourGutter />
-        {weekDates.map((d) => {
+        {weekDates.flatMap((d) => {
           const dKey = toDateKey(d);
           const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-          const events = eventsByDate[dKey] ?? [];
-          const leaveBlocks = leaves ? getLeaveBlocksForDay(d, leaves) : [];
+          // leaves/blockedSlots are always the CALLER's own schedule (useMyLeaves/
+          // useMyBlockedSlots) — in Practice mode these only make sense overlaid on
+          // the caller's own column, not on colleagues' columns whose availability
+          // this view has no data for. Computed once per day (not per event) and
+          // reused by both the render overlay and the conflict check below.
+          const leaveBlocks = !isMultiTherapist && leaves ? getLeaveBlocksForDay(d, leaves) : [];
+          const dayBlockedSlots = !isMultiTherapist && blockedSlots ? blockedSlots.filter((s) => isSameDay(new Date(s.date), d)) : [];
+          const columnsForDay = isMultiTherapist ? therapists! : [undefined];
+
+          return columnsForDay.map((t) => {
+          const events = isMultiTherapist
+            ? (eventsByTherapist![dKey]?.[t!.id] ?? [])
+            : (eventsByDate[dKey] ?? []);
 
           return (
             <div
-              key={dKey}
+              key={t ? `${dKey}-${t.id}` : dKey}
               className="relative border-l border-gray-200"
               style={{ background: isWeekend ? 'var(--canvas)' : 'transparent' }}
             >
               {Array.from({ length: 24 }).map((_, h) => (
                 <div key={h} className="h-20 border-b border-gray-200 flex flex-col">
-                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:00`)} />
-                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:30`)} />
+                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:00`, t?.id)} />
+                  <div className="flex-1 cursor-pointer hover:bg-black/5" onClick={() => onSlotClick && onSlotClick(d, `${String(h).padStart(2, '0')}:30`, t?.id)} />
                 </div>
               ))}
 
@@ -91,7 +135,7 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
                 </div>
               ))}
 
-              {(blockedSlots ? blockedSlots.filter((s) => isSameDay(new Date(s.date), d)) : []).map((bs, i) => {
+              {dayBlockedSlots.map((bs, i) => {
                 const startH = bs.startHour + bs.startMinute / 60;
                 const endH = bs.endHour + bs.endMinute / 60;
                 const durationMin = (endH - startH) * 60;
@@ -126,7 +170,7 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
                   const lbStart = lb.startHour;
                   const lbEnd = lb.startHour + lb.durationMin / 60;
                   return evStart < lbEnd && evEnd > lbStart;
-                }) || (blockedSlots ? blockedSlots.filter(s => isSameDay(new Date(s.date), d)) : []).some(bs => {
+                }) || dayBlockedSlots.some(bs => {
                   const evStart = ev.startHour;
                   const evEnd = ev.startHour + ev.durationMin / 60;
                   const bsStart = bs.startHour + bs.startMinute / 60;
@@ -182,6 +226,7 @@ export function WeekView({ weekDates, eventsByDate, leaves, blockedSlots, search
               {isSameDay(d, today) && <NowLine />}
             </div>
           );
+          });
         })}
       </div>
     </div>

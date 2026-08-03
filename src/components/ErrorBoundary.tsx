@@ -1,6 +1,15 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { logger } from '../utils/secureLogger';
 
+// Mirrors secureLogger.ts's own dev/prod split — a thrown error can carry
+// PHI in its message (e.g. a failed validation on clinical form data), and a
+// React component stack can reveal internal file/component structure. Both
+// are fine to show a developer locally, neither belongs on-screen for a real
+// user in production; secureLogger.error() already sends the sanitized
+// version to the audit trail regardless of what's rendered here.
+const isDevelopment =
+  (typeof import.meta !== 'undefined' && import.meta.env?.DEV === true) ||
+  (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development');
 
 interface Props {
   children: ReactNode;
@@ -48,20 +57,30 @@ export class ErrorBoundary extends Component<Props, State> {
               </div>
             </div>
 
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-              <h2 className="font-semibold text-red-900 mb-2">Error Details:</h2>
-              <p className="text-red-800 font-mono text-sm break-words">
-                {this.state.error?.toString()}
-              </p>
-            </div>
+            {isDevelopment ? (
+              <>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <h2 className="font-semibold text-red-900 mb-2">Error Details:</h2>
+                  <p className="text-red-800 font-mono text-sm break-words">
+                    {this.state.error?.toString()}
+                  </p>
+                </div>
 
-            {this.state.errorInfo && (
-              <details className="bg-[var(--surface-warm)] border border-border rounded-lg p-4 mb-4">
-                <summary className="font-semibold text-foreground cursor-pointer">Stack Trace</summary>
-                <pre className="mt-2 text-xs text-foreground overflow-auto max-h-96">
-                  {this.state.errorInfo.componentStack}
-                </pre>
-              </details>
+                {this.state.errorInfo && (
+                  <details className="bg-[var(--surface-warm)] border border-border rounded-lg p-4 mb-4">
+                    <summary className="font-semibold text-foreground cursor-pointer">Stack Trace</summary>
+                    <pre className="mt-2 text-xs text-foreground overflow-auto max-h-96">
+                      {this.state.errorInfo.componentStack}
+                    </pre>
+                  </details>
+                )}
+              </>
+            ) : (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-red-800 text-sm">
+                  We've logged this issue and will look into it. Try reloading the page below.
+                </p>
+              </div>
             )}
 
             <div className="space-y-3">
@@ -80,16 +99,16 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
             </div>
 
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h3 className="font-semibold text-blue-900 mb-2">Troubleshooting Steps:</h3>
-              <ol className="list-decimal list-inside text-sm text-blue-800 space-y-1">
-                <li>Check the browser console (F12) for detailed error messages</li>
-                <li>Ensure all dependencies are installed</li>
-                <li>Clear browser cache and reload</li>
-                <li>Check Firebase configuration in /config/firebase.ts</li>
-                <li>Review /TROUBLESHOOTING.md for common issues</li>
-              </ol>
-            </div>
+            {isDevelopment && (
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-2">Troubleshooting Steps:</h3>
+                <ol className="list-decimal list-inside text-sm text-blue-800 space-y-1">
+                  <li>Check the browser console (F12) for detailed error messages</li>
+                  <li>Ensure all dependencies are installed</li>
+                  <li>Clear browser cache and reload</li>
+                </ol>
+              </div>
+            )}
           </div>
         </div>
       );
