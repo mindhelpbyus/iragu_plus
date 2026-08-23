@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Video, MessageSquare, Calendar as CalendarIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   rescheduleAppointment,
@@ -12,6 +13,8 @@ import {
 import { ApiFetchError } from '../../api/client';
 import { type CalEvent } from './calendarConstants';
 import { addDays, formatDayShort, toDateKey } from './dateUtils';
+import { downloadIcsFile } from '../../utils/icsGenerator';
+import { WhatsAppDrawer } from '../../components/whatsapp/WhatsAppDrawer';
 
 const APPOINTMENT_TYPES: { value: AppointmentType; label: string }[] = [
   { value: 'individual', label: 'Individual' },
@@ -32,6 +35,7 @@ interface AppointmentDetailModalProps {
 }
 
 export function AppointmentDetailModal({ event, onClose, onChanged }: AppointmentDetailModalProps) {
+  const navigate = useNavigate();
   const initialStart = event.startTimeIso ? new Date(event.startTimeIso) : new Date();
 
   const [day, setDay] = useState(initialStart);
@@ -45,6 +49,7 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [showWhatsAppDrawer, setShowWhatsAppDrawer] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const dayOptions = Array.from({ length: 10 }, (_, i) => addDays(initialStart, i - 2));
@@ -57,6 +62,30 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
     duration !== event.durationMin ||
     colorChanged ||
     typeChanged;
+
+  const handleJoinVideo = () => {
+    onClose();
+    navigate('/telehealth');
+  };
+
+  const handleWhatsApp = () => {
+    setShowWhatsAppDrawer(true);
+  };
+
+  const handleExportIcs = () => {
+    const [h, m] = startTime.split(':').map(Number);
+    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
+    const end = new Date(start.getTime() + duration * 60000);
+
+    downloadIcsFile(`session-${event.id || 'appointment'}`, {
+      title: `Therapy Session: ${event.name}`,
+      description: `Therapy Consultation with ${event.name}.\nMode: In-App Video Call`,
+      startTime: start,
+      endTime: end,
+      locationUrl: window.location.origin + '/telehealth',
+    });
+    toast.success('Downloaded calendar (.ics) file');
+  };
 
   const handleSave = async () => {
     if (!event.id) return;
@@ -153,6 +182,37 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
             className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-full text-muted-text hover:bg-action-light/60"
           >
             <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Quick Clinical Action Bar */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 p-2 rounded-xl bg-canvas/80 border border-rule">
+          <button
+            type="button"
+            onClick={handleJoinVideo}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#1E7048] hover:bg-[#175C3B] text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            <Video className="w-3.5 h-3.5" />
+            Join In-App Video
+          </button>
+
+          <button
+            type="button"
+            onClick={handleWhatsApp}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-rule bg-surface hover:bg-canvas text-ink text-xs font-medium transition-colors"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+            WhatsApp Reminder
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportIcs}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-rule bg-surface hover:bg-canvas text-muted-text hover:text-ink text-xs font-medium transition-colors"
+            title="Download iCalendar file"
+          >
+            <CalendarIcon className="w-3.5 h-3.5" />
+            .ics
           </button>
         </div>
 
@@ -362,6 +422,16 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
           </div>
         )}
       </div>
+
+      <WhatsAppDrawer
+        isOpen={showWhatsAppDrawer}
+        onClose={() => setShowWhatsAppDrawer(false)}
+        initialParams={{
+          clientName: event.name,
+          sessionType: event.type,
+          sessionTime: `${startTime} (${duration}m)`,
+        }}
+      />
     </div>
   );
 }

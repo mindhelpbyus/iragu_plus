@@ -7,6 +7,7 @@ import { getMyTherapistId } from '../../api/therapistMe';
 import { getDaySlots, type TimeSlot } from '../../api/availability';
 import { ApiFetchError } from '../../api/client';
 import { addDays, formatDayShort, toDateKey } from './dateUtils';
+import { GuestAttendeesInput, type Attendee } from '../../components/calendar/GuestAttendeesInput';
 
 /** Mirrors the design's bookTypes exactly (Iragu+ CRM.dc.html ~line 2133) — dot color per type, not full-chip color. */
 const APPOINTMENT_TYPES: { value: AppointmentType; label: string; dot: string; bg: string; border: string; text: string }[] = [
@@ -74,6 +75,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
   const [startTime, setStartTime] = useState(initialStartTime || nowTimeRounded);
   const [endTime, setEndTime] = useState(() => addMinutesToTime(initialStartTime || nowTimeRounded(), 50)); // matches the '50 min' default duration
   const [mode, setMode] = useState<AppointmentMode>('video');
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [colorOverride, setColorOverride] = useState<string | null>(null);
   const [timeGridOpen, setTimeGridOpen] = useState(false);
   const [flagged, setFlagged] = useState(false);
@@ -193,6 +195,11 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
       // time — keeps a single source of truth for the elapsed length.
       const end = new Date(start.getTime() + duration * 60000);
 
+      const attendeesNote = attendees.length > 0 ? `Attendees: ${attendees.map((a) => `${a.name} (${a.email})`).join(', ')}` : '';
+      const combinedNotes = [flagged && flagNote.trim() ? `Follow-up: ${flagNote.trim()}` : '', attendeesNote]
+        .filter(Boolean)
+        .join(' | ');
+
       await createAppointment({
         therapistId: String(therapistId),
         clientId,
@@ -201,7 +208,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
         type,
         mode,
         colorOverride: colorOverride ?? undefined,
-        notes: flagged && flagNote.trim() ? `Follow-up: ${flagNote.trim()}` : undefined,
+        notes: combinedNotes || undefined,
       });
       setDone(true);
       onBooked();
@@ -360,6 +367,12 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
                 </button>
               ))}
             </div>
+
+            {(type === 'couples' || type === 'family' || type === 'group') && (
+              <div className="mb-5 rounded-[12px] border border-rule bg-canvas/40 p-4">
+                <GuestAttendeesInput attendees={attendees} onChange={setAttendees} />
+              </div>
+            )}
 
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-text">
               Priority color <span className="normal-case text-muted-text/70">· optional, overrides the type color on the calendar</span>

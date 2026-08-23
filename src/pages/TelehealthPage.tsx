@@ -1,5 +1,9 @@
-import { PlaceholderPage } from './PlaceholderPage';
+import { TelehealthSplitView } from '../components/telehealth/TelehealthSplitView';
 
 export default function TelehealthPage() {
-  return <PlaceholderPage title="Telehealth" />;
+  return (
+    <div className="w-full h-full">
+      <TelehealthSplitView />
+    </div>
+  );
 }
