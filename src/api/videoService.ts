@@ -80,6 +80,43 @@ export function joinAppointmentRoom(
   });
 }
 
+const roomSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  type: z.string(),
+  roomName: z.string(),
+  title: z.string(),
+  status: z.string(),
+});
+
+export type RoomType = 'instant_video_call' | 'instant_audio_call' | 'internal_meeting';
+
+/**
+ * Creates an ad-hoc room not tied to any scheduled appointment — an instant
+ * call or an internal team meeting. admin/staff/therapist-only server-side
+ * (requireRole in video-service's videoRoutes.ts), which matches every real
+ * iragu_plus user.
+ */
+export function createRoom(type: RoomType, title: string): Promise<{ id: string; roomName: string }> {
+  return apiFetch('/api/rooms', {
+    method: 'POST',
+    body: { type, title, provider: 'livekit' },
+    schema: z.object({ room: roomSchema }),
+    rawEnvelope: true,
+    baseUrl: VIDEO_API_BASE_URL,
+  }).then((res) => ({ id: res.room.id, roomName: res.room.roomName }));
+}
+
+/** Joins a room directly by id — the ad-hoc-meeting counterpart to joinAppointmentRoom. */
+export function joinRoom(roomId: string, params: JoinAppointmentParams = {}): Promise<JoinCredentials> {
+  return apiFetch(`/api/rooms/${roomId}/join`, {
+    method: 'POST',
+    body: { displayName: params.displayName, mode: params.mode ?? 'video' },
+    schema: joinCredentialsSchema,
+    baseUrl: VIDEO_API_BASE_URL,
+  });
+}
+
 /**
  * Therapist/admin/staff-only — ends the room for everyone (POST /rooms/{id}/end).
  * A client leaving just disconnects their own SDK session locally; there's no
@@ -91,4 +128,42 @@ export function endRoom(roomId: string): Promise<void> {
     schema: z.unknown(),
     baseUrl: VIDEO_API_BASE_URL,
   }).then(() => undefined);
+}
+
+/**
+ * Mints a signed, room-scoped, time-limited guest-join token
+ * (video-service's POST /rooms/{id}/guest-link) — the real "copy link" flow.
+ * Therapist/admin/staff-only server-side. The token itself is opaque here;
+ * the frontend embeds it into an in-app deep link
+ * (/telehealth/guest/{roomId}?token=...), never a raw provider URL.
+ */
+export function createGuestLink(roomId: string): Promise<{ roomId: string; token: string }> {
+  return apiFetch(`/api/rooms/${roomId}/guest-link`, {
+    method: 'POST',
+    schema: z.object({ roomId: z.string(), token: z.string() }),
+    baseUrl: VIDEO_API_BASE_URL,
+  });
+}
+
+export interface GuestJoinParams {
+  token: string;
+  displayName: string;
+  mode?: 'audio' | 'video';
+}
+
+/**
+ * The public counterpart to joinRoom — no Cognito session required. Backing
+ * route is deliberately outside video-service's normal auth gate; the
+ * signed token itself is the only credential. Never call this with a
+ * user-supplied roomId/token pair you haven't gotten from a real deep link —
+ * there is no server-side confirmation step before this mints real
+ * provider-scoped join credentials.
+ */
+export function guestJoinRoom(roomId: string, params: GuestJoinParams): Promise<JoinCredentials> {
+  return apiFetch(`/api/rooms/${roomId}/guest-join`, {
+    method: 'POST',
+    body: { token: params.token, displayName: params.displayName, mode: params.mode ?? 'video' },
+    schema: joinCredentialsSchema,
+    baseUrl: VIDEO_API_BASE_URL,
+  });
 }

@@ -31,6 +31,8 @@ const NotesPage = lazy(() => import('./pages/NotesPage'));
 const TasksPage = lazy(() => import('./pages/TasksPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const TelehealthPage = lazy(() => import('./pages/TelehealthPage'));
+const InstantRoomPage = lazy(() => import('./pages/InstantRoomPage'));
+const GuestJoinPage = lazy(() => import('./pages/GuestJoinPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const EarningsPage = lazy(() => import('./pages/EarningsPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
@@ -144,6 +146,20 @@ export default function App() {
                 </ErrorBoundary>
               }
             />
+            {/*
+              Genuinely public — the whole point of a guest-join link is that
+              the recipient has no iragu_plus account. No RequireAuth here,
+              deliberately; the room-scoped signed token in the URL is the
+              only credential (see api/videoService.ts's guestJoinRoom).
+            */}
+            <Route
+              path="/telehealth/guest/:roomId"
+              element={
+                <ErrorBoundary>
+                  <GuestJoinPage />
+                </ErrorBoundary>
+              }
+            />
 
             {/* ─── Protected — one real route per screen ──────────────── */}
             <Route
@@ -165,6 +181,7 @@ export default function App() {
               <Route path="/messages" element={<MessagesPage />} />
               <Route path="/telehealth" element={<TelehealthPage />} />
               <Route path="/telehealth/:appointmentId" element={<TelehealthPage />} />
+              <Route path="/telehealth/room/:roomId" element={<InstantRoomPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/billing" element={<EarningsPage />} />
               <Route path="/invoices" element={<StatementsPage />} />

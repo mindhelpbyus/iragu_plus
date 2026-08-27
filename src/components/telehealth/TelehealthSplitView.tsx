@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Save, CheckCircle2 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { useCallback } from 'react';
 import { VideoCallFrame } from './VideoCallFrame';
 import { SessionPanel } from './SessionPanel';
 import { useAuthStore } from '../../store/authStore';
 import { createClinicalNote } from '../../api/clinicalNotes';
+import { joinAppointmentRoom } from '../../api/videoService';
 import type { AppointmentDetails } from '../../api/appointmentsBackend';
 import type { ClientDetail } from '../../api/clientDetail';
 import { toast } from 'sonner';
@@ -39,6 +41,11 @@ export const TelehealthSplitView: React.FC<{
   const documentationLocked = view !== 'live';
   const clientName = formatClientName(client, appointment.clientName || `Client #${appointment.clientId}`);
   const isTherapist = currentUser?.role === 'therapist' || currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
+  const displayName = currentUser?.name || 'Therapist';
+  const requestJoinCredentials = useCallback(
+    () => joinAppointmentRoom(String(appointment.id), { displayName, mode: 'video' }),
+    [appointment.id, displayName],
+  );
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -68,8 +75,8 @@ export const TelehealthSplitView: React.FC<{
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="flex h-full min-h-0 flex-col lg:col-span-7">
           <VideoCallFrame
-            appointmentId={String(appointment.id)}
-            displayName={currentUser?.name || 'Therapist'}
+            requestJoinCredentials={requestJoinCredentials}
+            displayName={displayName}
             clientName={clientName}
             canEndForEveryone={isTherapist}
             isTherapist={isTherapist}

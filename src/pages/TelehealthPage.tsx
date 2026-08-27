@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Loader2, CalendarX } from 'lucide-react';
 import { TelehealthSplitView } from '../components/telehealth/TelehealthSplitView';
+import { TelehealthLauncher } from '../components/telehealth/TelehealthLauncher';
 import { getAppointmentDetails, type AppointmentDetails } from '../api/appointmentsBackend';
 import { getClientDetail, type ClientDetail } from '../api/clientDetail';
 
@@ -45,21 +46,7 @@ export default function TelehealthPage() {
   }, [appointmentId]);
 
   if (!appointmentId) {
-    return (
-      <div className="flex h-[calc(100vh-80px)] flex-col items-center justify-center gap-3 text-center">
-        <CalendarX className="h-10 w-10 text-muted-foreground" />
-        <div>
-          <p className="font-semibold text-foreground">No session selected</p>
-          <p className="text-sm text-muted-foreground">
-            Open a video session from{' '}
-            <Link to="/calendar" className="text-primary hover:underline">
-              the calendar
-            </Link>{' '}
-            or today's schedule.
-          </p>
-        </div>
-      </div>
-    );
+    return <TelehealthLauncher />;
   }
 
   if (loading) {

@@ -6,9 +6,11 @@ import { ControlBar } from './ControlBar';
 import { LiveKitCall } from './providers/LiveKitCall';
 import { JitsiCall } from './providers/JitsiCall';
 import { ZoomCall } from './providers/ZoomCall';
+import type { JoinCredentials } from '../../api/videoService';
 
 interface VideoCallFrameProps {
-  appointmentId: string;
+  /** The real join call — joinAppointmentRoom for a scheduled session, joinRoom for an ad-hoc room the caller already has access to. */
+  requestJoinCredentials: () => Promise<JoinCredentials>;
   displayName: string;
   clientName: string;
   canEndForEveryone: boolean;
@@ -35,7 +37,7 @@ function formatTimer(totalSeconds: number): string {
  * (never naming the provider) rather than a silent redirect.
  */
 export function VideoCallFrame({
-  appointmentId,
+  requestJoinCredentials,
   displayName,
   clientName,
   canEndForEveryone,
@@ -43,7 +45,7 @@ export function VideoCallFrame({
   onTogglePanel,
   onViewChange,
 }: VideoCallFrameProps) {
-  const call = useVideoCallState({ appointmentId, displayName, canEndForEveryone });
+  const call = useVideoCallState({ requestJoinCredentials, canEndForEveryone });
 
   if (onViewChange) onViewChange(call.view);
 

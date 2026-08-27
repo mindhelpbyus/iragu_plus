@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { joinAppointmentRoom, endRoom, type JoinCredentials } from '../../api/videoService';
+import { endRoom, type JoinCredentials } from '../../api/videoService';
 import type { ProviderCallHandle } from './providers/types';
 
 export type CallView = 'prejoin' | 'waiting' | 'live' | 'failover' | 'ended' | 'error';
@@ -24,8 +24,14 @@ export function resolveDisconnectView(
 }
 
 interface UseVideoCallStateArgs {
-  appointmentId: string;
-  displayName: string;
+  /**
+   * The actual join call — joinAppointmentRoom for a scheduled appointment,
+   * joinRoom for an ad-hoc room the caller already has access to, or
+   * guestJoinRoom for a public guest-link join. This hook owns the
+   * prejoin/waiting/live/failover/ended state machine either way; only the
+   * network call that produces JoinCredentials differs per entry point.
+   */
+  requestJoinCredentials: () => Promise<JoinCredentials>;
   canEndForEveryone: boolean;
 }
 
@@ -39,7 +45,7 @@ interface UseVideoCallStateArgs {
  * video-service capability, not something the frontend can decide on its
  * own), so failover here means "connection lost, offer to retry the join."
  */
-export function useVideoCallState({ appointmentId, displayName, canEndForEveryone }: UseVideoCallStateArgs) {
+export function useVideoCallState({ requestJoinCredentials, canEndForEveryone }: UseVideoCallStateArgs) {
   const [view, setView] = useState<CallView>('prejoin');
   const [credentials, setCredentials] = useState<JoinCredentials | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +64,7 @@ export function useVideoCallState({ appointmentId, displayName, canEndForEveryon
   const requestJoin = useCallback(async () => {
     setError(null);
     try {
-      const creds = await joinAppointmentRoom(appointmentId, { displayName, mode: 'video' });
+      const creds = await requestJoinCredentials();
       setCredentials(creds);
       setMuted(!creds.features.audio);
       setCamOn(creds.features.video);
@@ -73,7 +79,7 @@ export function useVideoCallState({ appointmentId, displayName, canEndForEveryon
       setView('error');
       return null;
     }
-  }, [appointmentId, displayName]);
+  }, [requestJoinCredentials]);
 
   const goLive = useCallback(async () => {
     if (!credentials || credentials.waitingRoom) {
