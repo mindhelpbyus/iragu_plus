@@ -59,7 +59,7 @@ export function AgendaPanel({ eventsByDate }: AgendaPanelProps) {
                   {group.items.map(({ ev, dateKey }) => (
                     <div
                       key={ev.id ?? dateKey + ev.time + ev.name}
-                      onClick={() => ev.showJoin && navigate('/telehealth')}
+                      onClick={() => ev.showJoin && ev.id && navigate(`/telehealth/${ev.id}`)}
                       className="flex cursor-pointer items-stretch gap-2.5 border-b border-gray-200 py-2 last:border-b-0"
                     >
                       <div className="w-[3px] flex-shrink-0 rounded-sm" style={{ background: ev.colors.border }} />

@@ -164,6 +164,7 @@ export default function App() {
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/messages" element={<MessagesPage />} />
               <Route path="/telehealth" element={<TelehealthPage />} />
+              <Route path="/telehealth/:appointmentId" element={<TelehealthPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/billing" element={<EarningsPage />} />
               <Route path="/invoices" element={<StatementsPage />} />

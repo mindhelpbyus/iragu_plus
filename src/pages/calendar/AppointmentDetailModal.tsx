@@ -65,7 +65,7 @@ export function AppointmentDetailModal({ event, onClose, onChanged }: Appointmen
 
   const handleJoinVideo = () => {
     onClose();
-    navigate('/telehealth');
+    navigate(`/telehealth/${event.id}`);
   };
 
   const handleWhatsApp = () => {
