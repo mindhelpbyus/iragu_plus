@@ -2,6 +2,8 @@ import { ExternalLink, ShieldCheck, PanelRight } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useVideoCallState, type CallView } from './useVideoCallState';
 import { StageOverlay } from './StageOverlay';
+import { IdleStage } from './IdleStage';
+import { ProviderBadge } from './ProviderBadge';
 import { ControlBar } from './ControlBar';
 import { LiveKitCall } from './providers/LiveKitCall';
 import { JitsiCall } from './providers/JitsiCall';
@@ -17,6 +19,12 @@ interface VideoCallFrameProps {
   isTherapist: boolean;
   onTogglePanel: () => void;
   onViewChange?: (view: CallView) => void;
+  /** Starts the frame in the real 'idle' launcher state (today's queue + start-now actions) instead of jumping straight to prejoin. */
+  startIdle?: boolean;
+  /** Navigate to a specific scheduled appointment's session from the idle launcher. */
+  onOpenAppointment?: (appointmentId: number) => void;
+  /** Provider identity is visible only to admin/org_owner — see ProviderBadge. */
+  showProviderBadge?: boolean;
 }
 
 function formatTimer(totalSeconds: number): string {
@@ -44,12 +52,17 @@ export function VideoCallFrame({
   isTherapist,
   onTogglePanel,
   onViewChange,
+  startIdle,
+  onOpenAppointment,
+  showProviderBadge,
 }: VideoCallFrameProps) {
-  const call = useVideoCallState({ requestJoinCredentials, canEndForEveryone });
+  const call = useVideoCallState({ requestJoinCredentials, canEndForEveryone, startIdle });
 
   if (onViewChange) onViewChange(call.view);
 
   const isLive = call.view === 'live';
+  const isIdle = call.view === 'idle';
+  const inSession = call.view !== 'idle';
   const subLine = isTherapist ? `Session with ${clientName}` : `With your therapist`;
 
   return (
@@ -58,7 +71,9 @@ export function VideoCallFrame({
       <div className="flex h-16 flex-none items-center gap-5 rounded-xl border border-rule bg-surface px-5">
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="whitespace-nowrap text-[15px] font-medium tracking-tight text-ink">Video session</span>
+            <span className="whitespace-nowrap text-[15px] font-medium tracking-tight text-ink">
+              {isIdle ? 'Video sessions' : 'Video session'}
+            </span>
             {isLive && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-action-light px-2 py-0.5 text-[11px] font-semibold text-action-dark">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-action" />
@@ -67,7 +82,7 @@ export function VideoCallFrame({
             )}
           </div>
           <div className="flex items-center gap-2 truncate text-[11.5px] text-muted-text">
-            <span>{subLine}</span>
+            <span>{isIdle ? 'Today’s schedule' : subLine}</span>
             <span className="text-rule-hi">·</span>
             <span className="inline-flex items-center gap-1">
               <ShieldCheck className="h-3 w-3" />
@@ -78,9 +93,13 @@ export function VideoCallFrame({
 
         <div className="flex-1" />
 
-        <div className="flex h-10 flex-none items-center gap-1.5 rounded-[10px] bg-surface-warm px-3">
-          <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">{formatTimer(call.seconds)}</span>
-        </div>
+        {showProviderBadge && <ProviderBadge provider={call.credentials?.provider ?? null} />}
+
+        {inSession && (
+          <div className="flex h-10 flex-none items-center gap-1.5 rounded-[10px] bg-surface-warm px-3">
+            <span className="font-mono text-[13px] font-semibold tabular-nums text-ink">{formatTimer(call.seconds)}</span>
+          </div>
+        )}
 
         <button
           type="button"
@@ -94,6 +113,8 @@ export function VideoCallFrame({
 
       {/* Stage */}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-[14px] border border-rule bg-[#0F1714]">
+        {isIdle && onOpenAppointment && <IdleStage onOpenAppointment={onOpenAppointment} />}
+
         {call.credentials &&
           !call.credentials.waitingRoom &&
           (call.view === 'live' || call.view === 'failover') && (
@@ -144,7 +165,7 @@ export function VideoCallFrame({
             </ExternalProviderStage>
           )}
 
-        {call.view !== 'live' && (
+        {call.view !== 'live' && call.view !== 'idle' && (
           <StageOverlay
             view={call.view}
             clientName={clientName}

@@ -18,6 +18,13 @@
 import { z } from 'zod';
 import { apiFetch, VIDEO_API_BASE_URL } from './client';
 
+// Design principle 6 (docs/specs/video-core-engine/design.md, backend-initial):
+// every request-scoped action is logged with enough context to reconstruct
+// what happened. video-service's requestContext middleware reads this
+// specifically (req.header('x-client-platform')) — every other real client
+// (community-app, therapistApp) already sends its own platform id.
+const CLIENT_PLATFORM_HEADERS = { 'X-Client-Platform': 'iragu-plus-web' };
+
 const featureFlagsSchema = z.object({
   audio: z.boolean(),
   video: z.boolean(),
@@ -77,6 +84,7 @@ export function joinAppointmentRoom(
     body: { displayName: params.displayName, mode: params.mode ?? 'video' },
     schema: joinCredentialsSchema,
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   });
 }
 
@@ -104,6 +112,7 @@ export function createRoom(type: RoomType, title: string): Promise<{ id: string;
     schema: z.object({ room: roomSchema }),
     rawEnvelope: true,
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   }).then((res) => ({ id: res.room.id, roomName: res.room.roomName }));
 }
 
@@ -114,6 +123,7 @@ export function joinRoom(roomId: string, params: JoinAppointmentParams = {}): Pr
     body: { displayName: params.displayName, mode: params.mode ?? 'video' },
     schema: joinCredentialsSchema,
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   });
 }
 
@@ -127,6 +137,7 @@ export function endRoom(roomId: string): Promise<void> {
     method: 'POST',
     schema: z.unknown(),
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   }).then(() => undefined);
 }
 
@@ -142,6 +153,7 @@ export function createGuestLink(roomId: string): Promise<{ roomId: string; token
     method: 'POST',
     schema: z.object({ roomId: z.string(), token: z.string() }),
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   });
 }
 
@@ -165,5 +177,6 @@ export function guestJoinRoom(roomId: string, params: GuestJoinParams): Promise<
     body: { token: params.token, displayName: params.displayName, mode: params.mode ?? 'video' },
     schema: joinCredentialsSchema,
     baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
   });
 }

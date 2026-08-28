@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { endRoom, type JoinCredentials } from '../../api/videoService';
 import type { ProviderCallHandle } from './providers/types';
 
-export type CallView = 'prejoin' | 'waiting' | 'live' | 'failover' | 'ended' | 'error';
+export type CallView = 'idle' | 'prejoin' | 'waiting' | 'live' | 'failover' | 'ended' | 'error';
 
 /**
  * Pure decision logic for a provider disconnect, extracted so it's testable
@@ -28,11 +28,18 @@ interface UseVideoCallStateArgs {
    * The actual join call — joinAppointmentRoom for a scheduled appointment,
    * joinRoom for an ad-hoc room the caller already has access to, or
    * guestJoinRoom for a public guest-link join. This hook owns the
-   * prejoin/waiting/live/failover/ended state machine either way; only the
-   * network call that produces JoinCredentials differs per entry point.
+   * idle/prejoin/waiting/live/failover/ended state machine either way; only
+   * the network call that produces JoinCredentials differs per entry point.
    */
   requestJoinCredentials: () => Promise<JoinCredentials>;
   canEndForEveryone: boolean;
+  /**
+   * Start in 'idle' (a real launcher state, not a route-level branch) rather
+   * than jumping straight to 'prejoin'. Used wherever there's a meaningful
+   * "nothing happening yet" moment — e.g. the main appointment frame, where
+   * the therapist/client should see today's queue before committing to join.
+   */
+  startIdle?: boolean;
 }
 
 /**
@@ -45,8 +52,8 @@ interface UseVideoCallStateArgs {
  * video-service capability, not something the frontend can decide on its
  * own), so failover here means "connection lost, offer to retry the join."
  */
-export function useVideoCallState({ requestJoinCredentials, canEndForEveryone }: UseVideoCallStateArgs) {
-  const [view, setView] = useState<CallView>('prejoin');
+export function useVideoCallState({ requestJoinCredentials, canEndForEveryone, startIdle }: UseVideoCallStateArgs) {
+  const [view, setView] = useState<CallView>(startIdle ? 'idle' : 'prejoin');
   const [credentials, setCredentials] = useState<JoinCredentials | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);

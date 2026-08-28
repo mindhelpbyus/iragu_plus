@@ -15,6 +15,7 @@ export default function InstantRoomPage() {
   const currentUser = useAuthStore((s) => s.user);
   const displayName = currentUser?.name || 'Host';
   const isTherapist = currentUser?.role === 'therapist' || currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
 
   const requestJoinCredentials = useCallback(() => {
     if (!roomId) throw new Error('No room specified.');
@@ -32,6 +33,7 @@ export default function InstantRoomPage() {
         canEndForEveryone={isTherapist}
         isTherapist={isTherapist}
         onTogglePanel={() => undefined}
+        showProviderBadge={isAdmin}
       />
     </div>
   );

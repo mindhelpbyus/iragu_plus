@@ -1,5 +1,6 @@
-import { Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, AlertTriangle, CheckCircle2, Mic, Video, Check } from 'lucide-react';
 import { Button } from '../ui/button';
+import { useConnectionReadiness } from './useConnectionReadiness';
 import type { CallView } from './useVideoCallState';
 
 function initialsOf(name: string): string {
@@ -29,8 +30,9 @@ interface StageOverlayProps {
 /**
  * Renders the pre-live / non-live states over the video stage — prejoin,
  * waiting room, failover (a real disconnect after connecting), error, and
- * ended. "live" itself renders nothing here; the actual provider component
- * (LiveKitCall/JitsiCall/ZoomCall) owns that state.
+ * ended. "live" and "idle" render nothing here — idle has its own IdleStage,
+ * and the actual provider component (LiveKitCall/JitsiCall/ZoomCall) owns
+ * the live view.
  */
 export function StageOverlay({
   view,
@@ -45,6 +47,8 @@ export function StageOverlay({
   waitingSub,
   elapsedLabel,
 }: StageOverlayProps) {
+  const readiness = useConnectionReadiness();
+
   if (view === 'prejoin') {
     return (
       <div className="absolute inset-0 flex items-center justify-center p-6">
@@ -60,13 +64,34 @@ export function StageOverlay({
               Camera preview
             </span>
           </div>
-          <div className="flex w-[300px] flex-none flex-col gap-3.5 rounded-xl border border-rule bg-surface p-6">
+          <div className="flex w-[340px] flex-none flex-col gap-3.5 rounded-xl border border-rule bg-surface p-6">
             <div>
               <div className="text-[19px] font-medium tracking-tight text-ink">Ready to join</div>
               <div className="mt-1 text-[12.5px] leading-relaxed text-muted-text">
                 Session with {clientName}. Devices are checked automatically when you connect.
               </div>
             </div>
+
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center gap-2.5 rounded-lg border border-rule px-3 py-2.5">
+                <Mic className="h-4 w-4 flex-none text-action-dark" />
+                <span className="flex-1 text-[12.5px] text-ink">Microphone</span>
+                {readiness.mediaPermission === 'granted' && <Check className="h-3.5 w-3.5 flex-none text-action" />}
+              </div>
+              <div className="flex items-center gap-2.5 rounded-lg border border-rule px-3 py-2.5">
+                <Video className="h-4 w-4 flex-none text-action-dark" />
+                <span className="flex-1 text-[12.5px] text-ink">Camera</span>
+                {readiness.mediaPermission === 'granted' && <Check className="h-3.5 w-3.5 flex-none text-action" />}
+              </div>
+              {readiness.downlinkMbps !== null && (
+                <div className="flex items-center gap-2.5 rounded-lg border border-rule bg-surface-sage px-3 py-2.5">
+                  <span className="flex-1 text-[12.5px] text-ink">
+                    Network {readiness.downlinkMbps} Mbps{readiness.effectiveType ? ` · ${readiness.effectiveType}` : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+
             <div className="rounded-lg bg-surface-warm p-3 text-[11.5px] leading-relaxed text-body-text">
               A secure room is created for this appointment when you join — no separate app or account needed.
             </div>

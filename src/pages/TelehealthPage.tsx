@@ -1,10 +1,41 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, CalendarX } from 'lucide-react';
 import { TelehealthSplitView } from '../components/telehealth/TelehealthSplitView';
-import { TelehealthLauncher } from '../components/telehealth/TelehealthLauncher';
+import { VideoCallFrame } from '../components/telehealth/VideoCallFrame';
 import { getAppointmentDetails, type AppointmentDetails } from '../api/appointmentsBackend';
 import { getClientDetail, type ClientDetail } from '../api/clientDetail';
+import { useAuthStore } from '../store/authStore';
+
+/**
+ * No appointmentId in the route: idle is a real state of VideoCallFrame's own
+ * idle/prejoin/waiting/live/failover/ended machine (matching the design),
+ * not a separate page. There's no appointment/client yet to hand
+ * TelehealthSplitView's SessionPanel, so this renders the frame directly —
+ * once a session is picked, IdleStage navigates to /telehealth/:appointmentId
+ * where TelehealthSplitView takes over with real data.
+ */
+function TelehealthIdleShell() {
+  const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
+
+  return (
+    <div className="flex h-[calc(100vh-80px)] flex-col gap-3 bg-canvas p-4">
+      <VideoCallFrame
+        requestJoinCredentials={() => Promise.reject(new Error('No session selected yet.'))}
+        displayName={currentUser?.name || 'Therapist'}
+        clientName="your client"
+        canEndForEveryone={false}
+        isTherapist
+        onTogglePanel={() => undefined}
+        startIdle
+        showProviderBadge={isAdmin}
+        onOpenAppointment={(appointmentId) => navigate(`/telehealth/${appointmentId}`)}
+      />
+    </div>
+  );
+}
 
 export default function TelehealthPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
@@ -46,7 +77,7 @@ export default function TelehealthPage() {
   }, [appointmentId]);
 
   if (!appointmentId) {
-    return <TelehealthLauncher />;
+    return <TelehealthIdleShell />;
   }
 
   if (loading) {

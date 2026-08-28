@@ -41,6 +41,7 @@ export const TelehealthSplitView: React.FC<{
   const documentationLocked = view !== 'live';
   const clientName = formatClientName(client, appointment.clientName || `Client #${appointment.clientId}`);
   const isTherapist = currentUser?.role === 'therapist' || currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
   const displayName = currentUser?.name || 'Therapist';
   const requestJoinCredentials = useCallback(
     () => joinAppointmentRoom(String(appointment.id), { displayName, mode: 'video' }),
@@ -82,6 +83,7 @@ export const TelehealthSplitView: React.FC<{
             isTherapist={isTherapist}
             onTogglePanel={() => setPanelOpen((v) => !v)}
             onViewChange={setView}
+            showProviderBadge={isAdmin}
           />
         </div>
 
