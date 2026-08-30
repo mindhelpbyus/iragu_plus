@@ -189,6 +189,18 @@ export default function App() {
               <Route path="/plans" element={<PlansPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/activity" element={<ActivityPage />} />
+              {/* No route-level permission gate — RequireAuth only excludes
+                  clients. AppSidebar hides the nav link unless the caller
+                  holds one of the real settings:* permissions (GET
+                  /me/org-context), but a therapist who navigates here
+                  directly is not blocked by the router itself. Verified
+                  2026-08-30: SettingsPage is currently a placeholder with no
+                  API calls, so there is no live data-exposure risk today —
+                  but when a real sub-feature (payroll, team members, etc.)
+                  is built here, IT must check the caller's specific
+                  settings:<x> permission before calling its backend
+                  endpoint (via useOrgContext's hasPermission), not rely on
+                  this route or the sidebar for enforcement. */}
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/settings/:section" element={<SettingsPage />} />
               <Route path="/support" element={<SupportPage />} />
