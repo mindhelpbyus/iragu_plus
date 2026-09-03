@@ -6,10 +6,8 @@ import {
   Users,
   Inbox,
   FileText,
-  CheckSquare,
   MessageSquare,
   Video,
-  Bell,
   Wallet,
   Receipt,
   Banknote,
@@ -28,13 +26,12 @@ import { useOrgContext, currentRoleLabel, hasPermission, clearOrgContextCache } 
 import { clearMyTherapistIdCache } from '../../api/therapistMe';
 import type { OrgContext } from '../../api/orgContext';
 import iraguPlusMark from '../../assets/brand/iragu-plus-mark.svg';
+import { NotificationBell } from './NotificationBell';
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** TODO: replace with real counts from backend-initial once /calendar and /clients list endpoints are wired here. */
-  badge?: number;
   /** If set, this item only renders when the caller holds AT LEAST ONE of
    *  these permission keys (GET /me/org-context) — never a hardcoded role
    *  check. Used for the org_owner-only settings:* capabilities. */
@@ -59,24 +56,20 @@ const SECTIONS: NavSection[] = [
     label: 'Practice',
     items: [
       { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
-      { to: '/calendar', label: 'Calendar', icon: Calendar, badge: 6 },
-      { to: '/clients', label: 'Clients', icon: Users, badge: 124 },
+      { to: '/calendar', label: 'Calendar', icon: Calendar },
+      { to: '/clients', label: 'Clients', icon: Users },
       { to: '/requests', label: 'Requests', icon: Inbox },
     ],
   },
   {
     label: 'Clinical',
-    items: [
-      { to: '/notes', label: 'Notes', icon: FileText },
-      { to: '/tasks', label: 'Tasks', icon: CheckSquare },
-    ],
+    items: [{ to: '/notes', label: 'Notes', icon: FileText }],
   },
   {
     label: 'Communication',
     items: [
       { to: '/messages', label: 'Messages', icon: MessageSquare },
       { to: '/telehealth', label: 'Telehealth', icon: Video },
-      { to: '/notifications', label: 'Notifications', icon: Bell },
     ],
   },
   {
@@ -168,16 +161,7 @@ export function AppSidebar() {
               >
                 <Search className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                title="Notifications"
-                className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-action-light/60"
-              >
-                <Bell className="h-4 w-4" />
-                <span className="absolute right-0.5 top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full border border-surface bg-[#B06060] px-[3px] text-[9px] font-bold text-white">
-                  3
-                </span>
-              </button>
+              <NotificationBell />
             </div>
           </>
         )}
@@ -220,16 +204,7 @@ export function AppSidebar() {
                 style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
               >
                 <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
-                {!collapsed && (
-                  <>
-                    <span className="mr-auto truncate">{item.label}</span>
-                    {item.badge != null && (
-                      <span className="rounded-full bg-action-light px-[7px] py-[2px] text-[11px] text-muted-text">
-                        {item.badge}
-                      </span>
-                    )}
-                  </>
-                )}
+                {!collapsed && <span className="mr-auto truncate">{item.label}</span>}
               </NavLink>
             ))}
           </div>

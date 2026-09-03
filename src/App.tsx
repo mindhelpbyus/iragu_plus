@@ -28,12 +28,10 @@ const ClientsPage = lazy(() => import('./pages/ClientsPage'));
 const ClientDetailPage = lazy(() => import('./pages/ClientDetailPage'));
 const RequestsPage = lazy(() => import('./pages/RequestsPage'));
 const NotesPage = lazy(() => import('./pages/NotesPage'));
-const TasksPage = lazy(() => import('./pages/TasksPage'));
 const MessagesPage = lazy(() => import('./pages/MessagesPage'));
 const TelehealthPage = lazy(() => import('./pages/TelehealthPage'));
 const InstantRoomPage = lazy(() => import('./pages/InstantRoomPage'));
 const GuestJoinPage = lazy(() => import('./pages/GuestJoinPage'));
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const EarningsPage = lazy(() => import('./pages/EarningsPage'));
 const StatementsPage = lazy(() => import('./pages/StatementsPage'));
 const PayoutsPage = lazy(() => import('./pages/PayoutsPage'));
@@ -160,6 +158,22 @@ export default function App() {
                 </ErrorBoundary>
               }
             />
+            {/*
+              The SHORT form of the same guest-join link — /g/482913077.
+              Resolves the code to {roomId, token} client-side (see
+              GuestJoinPage), then behaves identically to the long-form
+              route above. Kept as a top-level path so the shared link is as
+              short as the code itself — this is the actual fix for the
+              "share link is too big" problem, not a separate feature.
+            */}
+            <Route
+              path="/g/:code"
+              element={
+                <ErrorBoundary>
+                  <GuestJoinPage />
+                </ErrorBoundary>
+              }
+            />
 
             {/* ─── Protected — one real route per screen ──────────────── */}
             <Route
@@ -177,12 +191,10 @@ export default function App() {
               <Route path="/clients/:clientId" element={<ClientDetailPage />} />
               <Route path="/requests" element={<RequestsPage />} />
               <Route path="/notes" element={<NotesPage />} />
-              <Route path="/tasks" element={<TasksPage />} />
               <Route path="/messages" element={<MessagesPage />} />
               <Route path="/telehealth" element={<TelehealthPage />} />
               <Route path="/telehealth/:appointmentId" element={<TelehealthPage />} />
               <Route path="/telehealth/room/:roomId" element={<InstantRoomPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/billing" element={<EarningsPage />} />
               <Route path="/invoices" element={<StatementsPage />} />
               <Route path="/payments" element={<PayoutsPage />} />

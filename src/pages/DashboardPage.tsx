@@ -1,20 +1,13 @@
-import { CalendarDays, Plus, Search, Users, IndianRupee, Activity as ActivityIcon } from 'lucide-react';
+import { CalendarDays, Plus, Search, Users, Activity as ActivityIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useAuthStore } from '../store/authStore';
-import { MetricCard } from './dashboard/MetricCard';
+import { MetricCard, type MetricCardData } from './dashboard/MetricCard';
 import { TodaysSchedule } from './dashboard/TodaysSchedule';
-import { ClientActivityCard } from './dashboard/ClientActivityCard';
 import { ComplianceCard } from './dashboard/ComplianceCard';
-import { METRICS } from './dashboard/mockData';
-
-const METRIC_ICONS = [
-  <Users key="clients" />,
-  <CalendarDays key="sessions" />,
-  <IndianRupee key="revenue" />,
-  <ActivityIcon key="mood" />,
-];
+import { TaskActivityFeed } from './dashboard/TaskActivityFeed';
+import { useDashboardMetrics } from './dashboard/useDashboardMetrics';
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -28,6 +21,20 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const firstName = (user?.name ?? 'there').replace(/^Dr\.?\s*/i, '').split(' ')[0];
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+  const metrics = useDashboardMetrics();
+
+  const sessionsTodayLabel =
+    metrics.sessionsToday == null ? '' : ` · You have ${metrics.sessionsToday} session${metrics.sessionsToday === 1 ? '' : 's'} today`;
+
+  // Revenue is deliberately not a metric card here — surfacing a single
+  // top-line figure is its own product decision (which period, which
+  // framing); see EarningsPage for the real billing_payment-backed numbers.
+  // The activity feed is the real TaskActivityFeed card below, not a metric.
+  const metricCards: (MetricCardData & { icon: React.ReactNode })[] = [
+    { label: 'Active clients', value: metrics.activeClients != null ? String(metrics.activeClients) : null, icon: <Users /> },
+    { label: 'Sessions this week', value: metrics.sessionsThisWeek != null ? String(metrics.sessionsThisWeek) : null, icon: <CalendarDays /> },
+    { label: 'Avg mood score', value: metrics.avgMoodScore != null ? `${metrics.avgMoodScore} / 10` : null, icon: <ActivityIcon /> },
+  ];
 
   return (
     <>
@@ -48,7 +55,7 @@ export default function DashboardPage() {
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-end justify-between gap-4 pb-6">
           <div>
             <h2 className="text-[28px] font-medium tracking-tight text-ink">{getGreeting()}, {firstName}</h2>
-            <p className="mt-1 text-sm text-muted-text">{today} · You have 6 sessions today</p>
+            <p className="mt-1 text-sm text-muted-text">{today}{sessionsTodayLabel}</p>
           </div>
           <div className="flex gap-2.5">
             <Button variant="outline" className="h-10 gap-2" onClick={() => navigate('/calendar')}>
@@ -63,16 +70,16 @@ export default function DashboardPage() {
         </div>
 
         <div className="mx-auto max-w-[1400px]">
-          <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            {METRICS.map((m, i) => (
-              <MetricCard key={m.label} icon={METRIC_ICONS[i]} {...m} />
+          <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {metricCards.map((m) => (
+              <MetricCard key={m.label} {...m} />
             ))}
           </div>
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[2fr_1fr]">
             <TodaysSchedule />
             <div className="flex flex-col gap-5">
-              <ClientActivityCard />
+              <TaskActivityFeed />
               <ComplianceCard />
             </div>
           </div>

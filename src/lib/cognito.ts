@@ -238,6 +238,16 @@ export async function getAccessToken(): Promise<string | null> {
   return tokens?.accessToken ?? null;
 }
 
+/**
+ * Best-effort ID token (null if signed out). billing_payment's Lambda reads
+ * `custom:*` claims (e.g. custom:therapistId) off the ID token, not the
+ * access token — api/billing.ts uses this instead of getAccessToken().
+ */
+export async function getIdToken(): Promise<string | null> {
+  const tokens = await getCurrentSession();
+  return tokens?.idToken ?? null;
+}
+
 /** Sign the user out locally (clears tokens from storage). */
 export function cognitoSignOut(): void {
   const user = userPool.getCurrentUser();

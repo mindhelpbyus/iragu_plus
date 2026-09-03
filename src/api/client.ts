@@ -115,7 +115,7 @@ export async function apiRequest<T>(
     }
 
     if (!response.ok) {
-      let error: { message?: string; code?: string } = {};
+      let error: { message?: string; error?: string; code?: string } = {};
       const text = await response.text().catch(() => '');
       try {
         error = text ? JSON.parse(text) : {};
@@ -126,8 +126,11 @@ export async function apiRequest<T>(
       // ✅ Log status only — never log body (could contain PHI)
       logger.error('API error', { status: response.status, code: error.code });
 
+      // backend-initial errors use { message, code }; billing_payment's
+      // errors use { error: "<message>", code } (see billing_payment
+      // CLAUDE.md's "Error Response Shape") — accept both.
       throw new ApiException({
-        message: error.message || `Request failed with status ${response.status}`,
+        message: error.message || error.error || `Request failed with status ${response.status}`,
         code: error.code || `HTTP_${response.status}`,
         status: response.status,
         details: error,
