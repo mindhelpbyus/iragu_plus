@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getMyAppointments, type RawAppointment } from '../../api/appointmentsBackend';
 import { getMyTherapistId } from '../../api/therapistMe';
-import { initialsOf, tagColors, modeColors } from './mockData';
+import { initialsOf, tagColors, modeColors } from './dashboardDisplay';
 
 const TYPE_TAG: Record<RawAppointment['type'], 'Individual' | 'Couple' | 'Group' | 'Intake'> = {
   individual: 'Individual',

@@ -1,5 +1,16 @@
 import type { ReactNode } from 'react';
-import type { MetricCardData } from './mockData';
+
+export interface MetricCardData {
+  label: string;
+  /** Null while the real value is still loading — renders a placeholder dash rather than a fabricated number. */
+  value: string | null;
+  /**
+   * A "+N vs last week" comparison. Omitted (not fabricated) unless a real
+   * prior-period comparison is actually computed — see useDashboardMetrics'
+   * own comment on why this app doesn't invent one today.
+   */
+  delta?: string;
+}
 
 export function MetricCard({ icon, label, value, delta }: MetricCardData & { icon: ReactNode }) {
   return (
@@ -8,8 +19,8 @@ export function MetricCard({ icon, label, value, delta }: MetricCardData & { ico
         <span className="text-action [&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>
         {label}
       </div>
-      <div className="mt-2.5 text-[30px] font-medium leading-[1.1] tracking-tight text-ink">{value}</div>
-      <div className="mt-1.5 text-xs font-medium text-action">{delta}</div>
+      <div className="mt-2.5 text-[30px] font-medium leading-[1.1] tracking-tight text-ink">{value ?? '—'}</div>
+      {delta && <div className="mt-1.5 text-xs font-medium text-action">{delta}</div>}
     </div>
   );
 }

@@ -142,15 +142,36 @@ export function endRoom(roomId: string): Promise<void> {
 }
 
 /**
- * Mints a signed, room-scoped, time-limited guest-join token
- * (video-service's POST /rooms/{id}/guest-link) — the real "copy link" flow.
- * Therapist/admin/staff-only server-side. The token itself is opaque here;
- * the frontend embeds it into an in-app deep link
- * (/telehealth/guest/{roomId}?token=...), never a raw provider URL.
+ * Mints a signed, room-scoped, time-limited guest-join token, PLUS a short
+ * numeric code that resolves to it server-side (video-service's POST
+ * /rooms/{id}/guest-link) — the real "copy link" flow. Therapist/admin/
+ * staff-only server-side. The token itself is opaque here; the frontend
+ * embeds the SHORT CODE into the shareable link
+ * (/g/{code}), not the full token — the token is what made the old link
+ * long (header + payload + HMAC signature, all base64), and moving it
+ * server-side is what actually shortens the URL. GuestJoinPage resolves
+ * the code back to {roomId, token} via resolveGuestLinkCode before calling
+ * guestJoinRoom below with the real token, so the underlying credential and
+ * verification are completely unchanged.
  */
-export function createGuestLink(roomId: string): Promise<{ roomId: string; token: string }> {
+export function createGuestLink(roomId: string): Promise<{ roomId: string; token: string; code: string }> {
   return apiFetch(`/api/rooms/${roomId}/guest-link`, {
     method: 'POST',
+    schema: z.object({ roomId: z.string(), token: z.string(), code: z.string() }),
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  });
+}
+
+/**
+ * Resolves a short guest-link code to its underlying {roomId, token} — the
+ * public lookup step behind a short link like /g/482913077. No auth
+ * required (same reason guest-join itself needs none: the recipient has no
+ * iragu_plus account); the token this returns is the exact same signed JWT
+ * guestJoinRoom has always verified.
+ */
+export function resolveGuestLinkCode(code: string): Promise<{ roomId: string; token: string }> {
+  return apiFetch(`/api/guest-link/${code}`, {
     schema: z.object({ roomId: z.string(), token: z.string() }),
     baseUrl: VIDEO_API_BASE_URL,
     headers: CLIENT_PLATFORM_HEADERS,
@@ -176,6 +197,97 @@ export function guestJoinRoom(roomId: string, params: GuestJoinParams): Promise<
     method: 'POST',
     body: { token: params.token, displayName: params.displayName, mode: params.mode ?? 'video' },
     schema: joinCredentialsSchema,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  });
+}
+
+/**
+ * In-call chat — video-service's src/domain/types.ts ChatMessage, backed by
+ * a real persisted store (POST/GET /rooms/{id}/messages). Poll-based, not
+ * WebSocket: there is no realtime push channel for this from video-service
+ * today, so the panel polls listMessages on an interval (see SessionPanel).
+ */
+export const chatMessageSchema = z.object({
+  id: z.string(),
+  orgId: z.string(),
+  roomId: z.string(),
+  senderUserId: z.string(),
+  senderIdentity: z.string(),
+  messageType: z.enum(['text', 'system', 'file']),
+  body: z.string(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  createdAt: z.string(),
+});
+
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
+
+export function listMessages(roomId: string): Promise<ChatMessage[]> {
+  return apiFetch(`/api/rooms/${roomId}/messages`, {
+    method: 'GET',
+    schema: z.object({ messages: z.array(chatMessageSchema) }),
+    rawEnvelope: true,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  }).then((res) => res.messages);
+}
+
+export function postMessage(roomId: string, body: string): Promise<ChatMessage> {
+  return apiFetch(`/api/rooms/${roomId}/messages`, {
+    method: 'POST',
+    body: { body, messageType: 'text' },
+    schema: z.object({ message: chatMessageSchema }),
+    rawEnvelope: true,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  }).then((res) => res.message);
+}
+
+/**
+ * Per-room draft note — video-service's own `notes` table, used ONLY for
+ * ad-hoc/instant calls that have no backend-initial Appointment to tie a
+ * real ClinicalNote to. Never itself a clinical record: `data` is cleared
+ * server-side the moment status flips to 'submitted' (video-service's own
+ * upsertNote), so this must never be treated as a place clinical content
+ * durably lives — the real record is the ClinicalNote created via
+ * createClinicalNote (api/clinicalNotes.ts) at submit time. Scheduled-
+ * appointment sessions never touch this — see SessionPanel.tsx's SOAP tab,
+ * which writes straight to createClinicalNote instead.
+ */
+export const noteSchema = z.object({
+  roomId: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  status: z.enum(['draft', 'submitted']),
+  submittedClinicalNoteId: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+export type RoomNote = z.infer<typeof noteSchema>;
+
+export function getRoomNote(roomId: string): Promise<RoomNote> {
+  return apiFetch(`/api/rooms/${roomId}/notes`, {
+    method: 'GET',
+    schema: noteSchema,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  });
+}
+
+export function saveRoomNoteDraft(roomId: string, content: string): Promise<RoomNote> {
+  return apiFetch(`/api/rooms/${roomId}/notes`, {
+    method: 'PUT',
+    body: { data: { content } },
+    schema: noteSchema,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  });
+}
+
+export function markRoomNoteSubmitted(roomId: string, submittedClinicalNoteId: string): Promise<RoomNote> {
+  return apiFetch(`/api/rooms/${roomId}/notes`, {
+    method: 'PUT',
+    body: { status: 'submitted', submittedClinicalNoteId },
+    schema: noteSchema,
     baseUrl: VIDEO_API_BASE_URL,
     headers: CLIENT_PLATFORM_HEADERS,
   });

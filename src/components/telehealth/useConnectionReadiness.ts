@@ -8,6 +8,14 @@ export interface ConnectionReadiness {
   downlinkMbps: number | null;
   /** navigator.connection.effectiveType — '4g', '3g', etc. Null when unsupported (e.g. Safari, Firefox). */
   effectiveType: string | null;
+  /**
+   * Real device names from enumerateDevices() — the browser only returns a
+   * non-empty label once permission is already granted (a privacy
+   * constraint of the spec itself, not something this hook can bypass), so
+   * both stay null until mediaPermission === 'granted'. Never invented.
+   */
+  micLabel: string | null;
+  cameraLabel: string | null;
 }
 
 /**
@@ -24,6 +32,30 @@ export function useConnectionReadiness(): ConnectionReadiness {
     downlinkMbps: null,
     effectiveType: null,
   });
+  const [deviceLabels, setDeviceLabels] = useState<{ micLabel: string | null; cameraLabel: string | null }>({
+    micLabel: null,
+    cameraLabel: null,
+  });
+
+  useEffect(() => {
+    if (mediaPermission !== 'granted' || !navigator.mediaDevices?.enumerateDevices) return;
+    let cancelled = false;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        if (cancelled) return;
+        setDeviceLabels({
+          micLabel: devices.find((d) => d.kind === 'audioinput')?.label || null,
+          cameraLabel: devices.find((d) => d.kind === 'videoinput')?.label || null,
+        });
+      })
+      .catch(() => {
+        // Leave labels null — no fallback name is invented.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mediaPermission]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,5 +114,5 @@ export function useConnectionReadiness(): ConnectionReadiness {
     };
   }, []);
 
-  return { mediaPermission, ...network };
+  return { mediaPermission, ...network, ...deviceLabels };
 }

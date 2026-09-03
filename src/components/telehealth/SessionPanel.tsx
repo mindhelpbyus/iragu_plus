@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
-import { FileCheck, ExternalLink, ShieldCheck, Clock3, MessageCircle, Users } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { FileCheck, ExternalLink, ShieldCheck, Clock3, MessageCircle, Send, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Textarea } from '../ui/textarea';
+import { Button } from '../ui/button';
 import { getClientNotes, getClientConsent, type ClinicalNote } from '../../api/clientDetail';
 import { getClientMoods, type DailyMood } from '../../api/moods';
+import { listMessages, postMessage, type ChatMessage } from '../../api/videoService';
+import { useAuthStore } from '../../store/authStore';
 import type { AppointmentDetails } from '../../api/appointmentsBackend';
 import type { ClientDetail } from '../../api/clientDetail';
 
@@ -32,7 +35,11 @@ interface SessionPanelProps {
   soap: SoapNote;
   onSoapChange: (soap: SoapNote) => void;
   documentationLocked: boolean;
+  /** video-service's real roomId, set once join credentials exist. Chat has nothing to load/post against before then. */
+  roomId: string | null;
 }
+
+const CHAT_POLL_INTERVAL_MS = 4000;
 
 function tabBtnClass(active: boolean) {
   return active
@@ -40,11 +47,16 @@ function tabBtnClass(active: boolean) {
     : 'flex-none rounded-lg px-2.5 py-1.5 text-xs font-medium text-body-text transition-colors hover:bg-surface-sage';
 }
 
-export function SessionPanel({ appointment, client, clientName, soap, onSoapChange, documentationLocked }: SessionPanelProps) {
+export function SessionPanel({ appointment, client, clientName, soap, onSoapChange, documentationLocked, roomId }: SessionPanelProps) {
   const [tab, setTab] = useState<Tab>('notes');
   const [pastNotes, setPastNotes] = useState<ClinicalNote[]>([]);
   const [consent, setConsent] = useState<Awaited<ReturnType<typeof getClientConsent>> | null>(null);
   const [moods, setMoods] = useState<DailyMood[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const currentUser = useAuthStore((s) => s.user);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const clientId = String(appointment.clientId);
@@ -52,6 +64,43 @@ export function SessionPanel({ appointment, client, clientName, soap, onSoapChan
     getClientConsent(clientId).then(setConsent).catch(() => setConsent(null));
     getClientMoods(Number(appointment.clientId)).then(setMoods).catch(() => setMoods([]));
   }, [appointment.clientId]);
+
+  // Polls while the chat tab is open and a real room exists — video-service
+  // has no realtime push channel for messages, only a persisted store
+  // (GET/POST /rooms/{id}/messages), so polling is the honest option here
+  // rather than pretending this is a live socket.
+  useEffect(() => {
+    if (tab !== 'chat' || !roomId) return;
+    let cancelled = false;
+    const load = () => {
+      listMessages(roomId)
+        .then((msgs) => { if (!cancelled) setMessages(msgs); })
+        .catch(() => undefined);
+    };
+    load();
+    const interval = setInterval(load, CHAT_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [tab, roomId]);
+
+  useEffect(() => {
+    if (tab === 'chat') messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages, tab]);
+
+  const handleSendMessage = async () => {
+    const body = messageDraft.trim();
+    if (!body || !roomId) return;
+    setSendingMessage(true);
+    try {
+      const sent = await postMessage(roomId, body);
+      setMessages((prev) => [...prev, sent]);
+      setMessageDraft('');
+    } catch {
+      // Real send failure — leave the draft in place so the user can retry
+      // rather than silently losing what they typed.
+    } finally {
+      setSendingMessage(false);
+    }
+  };
 
   const latestMood = moods[0];
 
@@ -111,11 +160,62 @@ export function SessionPanel({ appointment, client, clientName, soap, onSoapChan
         )}
 
         {tab === 'chat' && (
-          <EmptyTabState
-            icon={<MessageCircle className="h-6 w-6" />}
-            title="In-call chat isn't wired up yet"
-            body="This tab is reserved for real-time chat messages exchanged during the call — not implemented in this frame yet."
-          />
+          roomId ? (
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                {messages.length === 0 && (
+                  <p className="py-6 text-center text-xs text-muted-text">No messages yet. Say hello.</p>
+                )}
+                {messages.map((m) => {
+                  const isMine = m.senderUserId === currentUser?.id;
+                  return (
+                    <div key={m.id} className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                      <div
+                        className={
+                          isMine
+                            ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-action-light px-3 py-2 text-xs text-action-dark'
+                            : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-surface-sage px-3 py-2 text-xs text-body-text'
+                        }
+                      >
+                        {!isMine && <div className="mb-0.5 text-[10px] font-semibold text-muted-text">{m.senderIdentity}</div>}
+                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                      </div>
+                      <span className="mt-0.5 text-[10px] text-muted-text">
+                        {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+              <form
+                onSubmit={(e) => { e.preventDefault(); void handleSendMessage(); }}
+                className="flex flex-none items-center gap-2 border-t border-rule pt-3"
+              >
+                <input
+                  type="text"
+                  value={messageDraft}
+                  onChange={(e) => setMessageDraft(e.target.value)}
+                  placeholder="Send a message…"
+                  className="h-9 flex-1 rounded-lg border border-rule bg-canvas px-3 text-xs text-ink placeholder:text-muted-text focus:outline-none focus:ring-1 focus:ring-action"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!messageDraft.trim() || sendingMessage}
+                  className="h-9 w-9 flex-none bg-action p-0 text-canvas hover:bg-action-dark disabled:cursor-not-allowed disabled:bg-surface-warm disabled:text-muted-text disabled:opacity-70"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </Button>
+              </form>
+            </div>
+          ) : (
+            <EmptyTabState
+              icon={<MessageCircle className="h-6 w-6" />}
+              title="Chat opens once the call starts"
+              body="Join the call to send and receive in-call messages for this session."
+            />
+          )
         )}
 
         {tab === 'people' && (
@@ -221,7 +321,7 @@ function SoapField({
   );
 }
 
-function EmptyTabState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+export function EmptyTabState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-rule-hi p-6 text-center text-muted-text">
       {icon}

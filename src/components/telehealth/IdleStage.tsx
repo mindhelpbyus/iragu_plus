@@ -79,8 +79,12 @@ export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointme
     setStartingInstant(true);
     try {
       const room = await createRoom('instant_video_call', 'Instant meeting');
-      const { token } = await createGuestLink(room.id);
-      const link = `${window.location.origin}/telehealth/guest/${room.id}?token=${encodeURIComponent(token)}`;
+      const { code } = await createGuestLink(room.id);
+      // Short code, not the raw signed token — the token was what made this
+      // link long (header + payload + HMAC signature, all base64). The
+      // token itself is unchanged and still the real credential; /g/:code
+      // just resolves to it server-side instead of carrying it in the URL.
+      const link = `${window.location.origin}/g/${code}`;
       await navigator.clipboard.writeText(link);
       setCopiedLink(true);
       toast.success('Link copied — share it with anyone you want on the call.');

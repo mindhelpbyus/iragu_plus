@@ -19,12 +19,16 @@ interface VideoCallFrameProps {
   isTherapist: boolean;
   onTogglePanel: () => void;
   onViewChange?: (view: CallView) => void;
+  /** Surfaces the real video-service roomId once join credentials exist, so the side panel's chat tab can call the real messages endpoint. */
+  onRoomIdChange?: (roomId: string | null) => void;
   /** Starts the frame in the real 'idle' launcher state (today's queue + start-now actions) instead of jumping straight to prejoin. */
   startIdle?: boolean;
   /** Navigate to a specific scheduled appointment's session from the idle launcher. */
   onOpenAppointment?: (appointmentId: number) => void;
   /** Provider identity is visible only to admin/org_owner — see ProviderBadge. */
   showProviderBadge?: boolean;
+  /** Where the "Back to telehealth" button on the ended card goes — the ended state otherwise has no way out. */
+  onDone: () => void;
 }
 
 function formatTimer(totalSeconds: number): string {
@@ -52,13 +56,16 @@ export function VideoCallFrame({
   isTherapist,
   onTogglePanel,
   onViewChange,
+  onRoomIdChange,
   startIdle,
   onOpenAppointment,
   showProviderBadge,
+  onDone,
 }: VideoCallFrameProps) {
   const call = useVideoCallState({ requestJoinCredentials, canEndForEveryone, startIdle });
 
   if (onViewChange) onViewChange(call.view);
+  if (onRoomIdChange) onRoomIdChange(call.credentials?.roomId ?? null);
 
   const isLive = call.view === 'live';
   const isIdle = call.view === 'idle';
@@ -134,7 +141,7 @@ export function VideoCallFrame({
                   displayName={displayName}
                   onConnected={call.onProviderConnected}
                   onDisconnected={call.onProviderDisconnected}
-                  onLocalMediaStateChange={() => undefined}
+                  onLocalMediaStateChange={call.onLocalMediaStateChange}
                 />
               )}
               {call.credentials.provider === 'jitsi' && (
@@ -144,7 +151,7 @@ export function VideoCallFrame({
                   displayName={displayName}
                   onConnected={call.onProviderConnected}
                   onDisconnected={call.onProviderDisconnected}
-                  onLocalMediaStateChange={() => undefined}
+                  onLocalMediaStateChange={call.onLocalMediaStateChange}
                 />
               )}
               {call.credentials.provider === 'zoom' && (
@@ -154,7 +161,7 @@ export function VideoCallFrame({
                   displayName={displayName}
                   onConnected={call.onProviderConnected}
                   onDisconnected={call.onProviderDisconnected}
-                  onLocalMediaStateChange={() => undefined}
+                  onLocalMediaStateChange={call.onLocalMediaStateChange}
                 />
               )}
               {call.credentials.provider === 'huddle01' && (
@@ -178,6 +185,8 @@ export function VideoCallFrame({
             waitingTitle={isTherapist ? `Waiting for ${clientName}` : 'Waiting for your therapist'}
             waitingSub="We'll connect you automatically once your session partner joins."
             elapsedLabel={formatTimer(call.seconds)}
+            onDone={onDone}
+            showRoutingBanner
           />
         )}
       </div>
@@ -190,6 +199,15 @@ export function VideoCallFrame({
         onEnd={call.endSession}
         endLabel={isTherapist ? 'End session' : 'Leave'}
         hidden={!isLive || call.credentials?.provider === 'zoom'}
+        captionsOn={call.captionsOn}
+        onToggleCaptions={call.toggleCaptions}
+        {...(call.credentials?.provider === 'livekit'
+          ? {
+              screenSharing: call.screenSharing,
+              onToggleScreenShare: call.toggleScreenShare,
+              onToggleLayout: call.cycleLayout,
+            }
+          : {})}
       />
     </div>
   );

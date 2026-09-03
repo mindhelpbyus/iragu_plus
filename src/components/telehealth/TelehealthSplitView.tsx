@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Save, CheckCircle2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useCallback } from 'react';
@@ -32,13 +33,21 @@ export const TelehealthSplitView: React.FC<{
   client: ClientDetail | null;
 }> = ({ appointment, client }) => {
   const currentUser = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const [view, setView] = useState<CallView>('prejoin');
+  const [roomId, setRoomId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [soap, setSoap] = useState<SoapNote>(EMPTY_SOAP);
 
-  const documentationLocked = view !== 'live';
+  // SOAP documentation opens once the call has actually happened (live) and
+  // STAYS open after it ends — that's when a therapist actually writes the
+  // note in practice, not mid-session while running the call. Only genuinely
+  // locked before any real session content exists: idle/prejoin/waiting, and
+  // the transient 'error' state where nothing was ever connected.
+  const hasHadLiveSession = view === 'live' || view === 'ended' || view === 'failover';
+  const documentationLocked = !hasHadLiveSession;
   const clientName = formatClientName(client, appointment.clientName || `Client #${appointment.clientId}`);
   const isTherapist = currentUser?.role === 'therapist' || currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
@@ -83,7 +92,9 @@ export const TelehealthSplitView: React.FC<{
             isTherapist={isTherapist}
             onTogglePanel={() => setPanelOpen((v) => !v)}
             onViewChange={setView}
+            onRoomIdChange={setRoomId}
             showProviderBadge={isAdmin}
+            onDone={() => navigate('/telehealth', { replace: true })}
           />
         </div>
 
@@ -96,6 +107,7 @@ export const TelehealthSplitView: React.FC<{
               soap={soap}
               onSoapChange={setSoap}
               documentationLocked={documentationLocked}
+              roomId={roomId}
             />
 
             <div className="flex flex-none items-center justify-between rounded-xl border border-rule bg-surface px-4 py-3">

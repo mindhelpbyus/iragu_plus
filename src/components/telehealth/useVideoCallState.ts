@@ -59,6 +59,12 @@ export function useVideoCallState({ requestJoinCredentials, canEndForEveryone, s
   const [muted, setMuted] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [seconds, setSeconds] = useState(0);
+  // Real toggle state, honestly staged: captions has no backing STT pipeline
+  // yet (that's Part A/Sarvam's eventual job), so toggling this only flips
+  // the button's own state — ControlBar surfaces a "coming soon" message
+  // rather than pretending captions actually appear.
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const providerRef = useRef<ProviderCallHandle>(null);
   const hasEverConnected = useRef(false);
 
@@ -107,6 +113,18 @@ export function useVideoCallState({ requestJoinCredentials, canEndForEveryone, s
     setError(nextError);
   }, []);
 
+  /**
+   * muted/camOn are the SDK's REAL, reported state (via
+   * onLocalMediaStateChange below) — not locally flipped on click. A
+   * provider's toggleAudio()/toggleVideo() can fail (e.g. camera permission
+   * revoked mid-call, device disconnected), so optimistically flipping the
+   * icon here would show a control that's lying about what's actually live.
+   */
+  const onLocalMediaStateChange = useCallback((state: { audioEnabled: boolean; videoEnabled: boolean }) => {
+    setMuted(!state.audioEnabled);
+    setCamOn(state.videoEnabled);
+  }, []);
+
   const toggleMute = useCallback(async () => {
     await providerRef.current?.toggleAudio();
   }, []);
@@ -129,6 +147,26 @@ export function useVideoCallState({ requestJoinCredentials, canEndForEveryone, s
     await requestJoin();
   }, [requestJoin]);
 
+  const toggleCaptions = useCallback(() => {
+    setCaptionsOn((on) => !on);
+  }, []);
+
+  // Only real on LiveKit — providerRef.current?.toggleScreenShare is
+  // undefined for Jitsi/Zoom adapters (see ProviderCallHandle's own
+  // comment), so this silently no-ops rather than throwing for those
+  // providers. VideoCallFrame only renders the button when it can tell the
+  // mounted provider is LiveKit, but this guard keeps the hook itself safe
+  // regardless of caller.
+  const toggleScreenShare = useCallback(async () => {
+    if (!providerRef.current?.toggleScreenShare) return;
+    await providerRef.current.toggleScreenShare();
+    setScreenSharing((s) => !s);
+  }, []);
+
+  const cycleLayout = useCallback(() => {
+    providerRef.current?.cycleLayout?.();
+  }, []);
+
   return {
     view,
     setView,
@@ -136,14 +174,20 @@ export function useVideoCallState({ requestJoinCredentials, canEndForEveryone, s
     error,
     muted,
     camOn,
+    captionsOn,
+    screenSharing,
     seconds,
     providerRef,
     requestJoin,
     goLive,
     onProviderConnected,
     onProviderDisconnected,
+    onLocalMediaStateChange,
     toggleMute,
     toggleCam,
+    toggleCaptions,
+    toggleScreenShare,
+    cycleLayout,
     endSession,
     retryFromFailover,
   };

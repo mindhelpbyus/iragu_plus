@@ -1,12 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Video } from 'lucide-react';
+import { Video, Loader2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { StageOverlay } from '../components/telehealth/StageOverlay';
 import { ControlBar } from '../components/telehealth/ControlBar';
 import { useVideoCallState } from '../components/telehealth/useVideoCallState';
-import { guestJoinRoom } from '../api/videoService';
+import { guestJoinRoom, resolveGuestLinkCode } from '../api/videoService';
 import { LiveKitCall } from '../components/telehealth/providers/LiveKitCall';
 import { JitsiCall } from '../components/telehealth/providers/JitsiCall';
 import { ZoomCall } from '../components/telehealth/providers/ZoomCall';
@@ -19,32 +19,69 @@ function formatTimer(totalSeconds: number): string {
 
 /**
  * Public, no-login guest entry point for an ad-hoc room's "copy link" share
- * flow — /telehealth/guest/:roomId?token=... . The signed token in the URL
- * (video-service's POST /rooms/{id}/guest-link) is the only credential; this
- * page never touches Cognito. Same provider-invisible principle as the main
+ * flow. Two URL shapes land here: the short form (/g/:code — what
+ * IdleStage's "Start and copy link" actually hands out today) and the
+ * long form (/telehealth/guest/:roomId?token=... — kept working for any
+ * link minted before the short form existed). The short form resolves its
+ * code to {roomId, token} via resolveGuestLinkCode first; either way, the
+ * SAME signed JWT is what guestJoinRoom verifies below — this page never
+ * touches Cognito. Same provider-invisible principle as the main
  * VideoCallFrame — a guest never sees which video SDK is actually running.
  */
 export default function GuestJoinPage() {
-  const { roomId } = useParams<{ roomId: string }>();
+  const { roomId: roomIdParam, code } = useParams<{ roomId?: string; code?: string }>();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const tokenParam = searchParams.get('token');
+
+  const [resolved, setResolved] = useState<{ roomId: string; token: string } | null>(
+    roomIdParam && tokenParam ? { roomId: roomIdParam, token: tokenParam } : null,
+  );
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(Boolean(code));
+
+  useEffect(() => {
+    if (!code || resolved) return;
+    let cancelled = false;
+    resolveGuestLinkCode(code)
+      .then((result) => {
+        if (!cancelled) setResolved(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setResolveError(err instanceof Error ? err.message : 'This link is no longer active.');
+      })
+      .finally(() => {
+        if (!cancelled) setResolving(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, resolved]);
+
   const [displayName, setDisplayName] = useState('');
   const [nameSubmitted, setNameSubmitted] = useState(false);
 
   const requestJoinCredentials = useCallback(() => {
-    if (!roomId || !token) throw new Error('This link is missing required information.');
-    return guestJoinRoom(roomId, { token, displayName: displayName || 'Guest', mode: 'video' });
-  }, [roomId, token, displayName]);
+    if (!resolved) throw new Error('This link is missing required information.');
+    return guestJoinRoom(resolved.roomId, { token: resolved.token, displayName: displayName || 'Guest', mode: 'video' });
+  }, [resolved, displayName]);
 
   const call = useVideoCallState({ requestJoinCredentials, canEndForEveryone: false });
   const isLive = call.view === 'live';
 
-  if (!roomId || !token) {
+  if (resolving) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-canvas">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-text" />
+      </div>
+    );
+  }
+
+  if (!resolved || resolveError) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas p-6 text-center">
         <div>
           <p className="font-semibold text-ink">This link is invalid</p>
-          <p className="mt-1 text-sm text-muted-text">Ask whoever sent it to share the link again.</p>
+          <p className="mt-1 text-sm text-muted-text">{resolveError || 'Ask whoever sent it to share the link again.'}</p>
         </div>
       </div>
     );
@@ -96,7 +133,7 @@ export default function GuestJoinPage() {
                 displayName={displayName}
                 onConnected={call.onProviderConnected}
                 onDisconnected={call.onProviderDisconnected}
-                onLocalMediaStateChange={() => undefined}
+                onLocalMediaStateChange={call.onLocalMediaStateChange}
               />
             )}
             {call.credentials.provider === 'jitsi' && (
@@ -106,7 +143,7 @@ export default function GuestJoinPage() {
                 displayName={displayName}
                 onConnected={call.onProviderConnected}
                 onDisconnected={call.onProviderDisconnected}
-                onLocalMediaStateChange={() => undefined}
+                onLocalMediaStateChange={call.onLocalMediaStateChange}
               />
             )}
             {call.credentials.provider === 'zoom' && (
@@ -116,7 +153,7 @@ export default function GuestJoinPage() {
                 displayName={displayName}
                 onConnected={call.onProviderConnected}
                 onDisconnected={call.onProviderDisconnected}
-                onLocalMediaStateChange={() => undefined}
+                onLocalMediaStateChange={call.onLocalMediaStateChange}
               />
             )}
           </div>
@@ -135,6 +172,7 @@ export default function GuestJoinPage() {
             waitingTitle="Waiting for the host"
             waitingSub="You'll connect automatically once the host joins."
             elapsedLabel={formatTimer(call.seconds)}
+            onDone={null}
           />
         )}
       </div>

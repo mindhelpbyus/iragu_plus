@@ -1,6 +1,7 @@
 import { Loader2, AlertTriangle, CheckCircle2, Mic, Video, Check } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useConnectionReadiness } from './useConnectionReadiness';
+import { useMicLevel } from './useMicLevel';
 import type { CallView } from './useVideoCallState';
 
 function initialsOf(name: string): string {
@@ -11,6 +12,27 @@ function initialsOf(name: string): string {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+}
+
+/**
+ * Static effectiveType -> quality label, using only data
+ * useConnectionReadiness already exposes (Chromium's Network Information
+ * API) — never a fabricated number. Unrecognized/absent effectiveType
+ * (Safari/Firefox, or not yet measured) renders no label rather than
+ * guessing.
+ */
+function qualityLabel(effectiveType: string | null): string | null {
+  switch (effectiveType) {
+    case '4g':
+      return 'Good';
+    case '3g':
+      return 'Fair';
+    case '2g':
+    case 'slow-2g':
+      return 'Poor';
+    default:
+      return null;
+  }
 }
 
 interface StageOverlayProps {
@@ -25,6 +47,17 @@ interface StageOverlayProps {
   waitingTitle: string;
   waitingSub: string;
   elapsedLabel: string;
+  /** Where the ended card's action goes once the session has ended — it has no other way out otherwise. Omit entirely for a guest with no account to return to. */
+  onDone: (() => void) | null;
+  /** Defaults to "Back to telehealth" — override for contexts where that destination doesn't make sense (e.g. a guest link). */
+  doneLabel?: string;
+  /**
+   * Shows a generic "routed automatically for the best connection" note on
+   * the prejoin card. Deliberately takes no provider value — provider
+   * identity stays admin/org_owner-only (see ProviderBadge.tsx); this prop
+   * only controls whether the generic banner appears, never what it says.
+   */
+  showRoutingBanner?: boolean;
 }
 
 /**
@@ -46,8 +79,13 @@ export function StageOverlay({
   waitingTitle,
   waitingSub,
   elapsedLabel,
+  onDone,
+  doneLabel = 'Back to telehealth',
+  showRoutingBanner,
 }: StageOverlayProps) {
   const readiness = useConnectionReadiness();
+  const quality = qualityLabel(readiness.effectiveType);
+  const micLevel = useMicLevel(view === 'prejoin' && readiness.mediaPermission === 'granted');
 
   if (view === 'prejoin') {
     return (
@@ -75,12 +113,22 @@ export function StageOverlay({
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center gap-2.5 rounded-lg border border-rule px-3 py-2.5">
                 <Mic className="h-4 w-4 flex-none text-action-dark" />
-                <span className="flex-1 text-[12.5px] text-ink">Microphone</span>
-                {readiness.mediaPermission === 'granted' && <Check className="h-3.5 w-3.5 flex-none text-action" />}
+                <span className="flex-1 truncate text-[12.5px] text-ink">{readiness.micLabel || 'Microphone'}</span>
+                {readiness.mediaPermission === 'granted' && (
+                  <span className="flex h-3.5 w-9 flex-none items-end gap-[2px]" aria-hidden>
+                    {[0.2, 0.4, 0.6, 0.8, 1].map((threshold) => (
+                      <span
+                        key={threshold}
+                        className={`w-[3px] flex-1 rounded-sm transition-colors ${micLevel >= threshold ? 'bg-action' : 'bg-rule'}`}
+                        style={{ height: `${threshold * 100}%` }}
+                      />
+                    ))}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2.5 rounded-lg border border-rule px-3 py-2.5">
                 <Video className="h-4 w-4 flex-none text-action-dark" />
-                <span className="flex-1 text-[12.5px] text-ink">Camera</span>
+                <span className="flex-1 truncate text-[12.5px] text-ink">{readiness.cameraLabel || 'Camera'}</span>
                 {readiness.mediaPermission === 'granted' && <Check className="h-3.5 w-3.5 flex-none text-action" />}
               </div>
               {readiness.downlinkMbps !== null && (
@@ -88,12 +136,15 @@ export function StageOverlay({
                   <span className="flex-1 text-[12.5px] text-ink">
                     Network {readiness.downlinkMbps} Mbps{readiness.effectiveType ? ` · ${readiness.effectiveType}` : ''}
                   </span>
+                  {quality && <span className="flex-none text-[11px] font-semibold text-action-dark">{quality}</span>}
                 </div>
               )}
             </div>
 
             <div className="rounded-lg bg-surface-warm p-3 text-[11.5px] leading-relaxed text-body-text">
-              A secure room is created for this appointment when you join — no separate app or account needed.
+              {showRoutingBanner
+                ? 'Routed automatically for the best connection. A secure room is created for this appointment when you join — no separate app or account needed.'
+                : 'A secure room is created for this appointment when you join — no separate app or account needed.'}
             </div>
             <Button onClick={onGoLive} className="h-12 rounded-2xl bg-action text-[14px] font-semibold text-canvas shadow-[0_10px_24px_-6px_rgba(30,112,72,.22)] hover:bg-action-dark">
               {joinLabel}
@@ -167,7 +218,7 @@ export function StageOverlay({
   if (view === 'ended') {
     return (
       <div className="absolute inset-0 flex items-center justify-center overflow-auto bg-canvas p-7">
-        <div className="flex w-full max-w-[560px] flex-col gap-4">
+        <div className="flex w-full max-w-[560px] flex-col gap-5">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-action-light text-action-dark">
               <CheckCircle2 className="h-5 w-5" />
@@ -177,6 +228,13 @@ export function StageOverlay({
               <div className="mt-0.5 text-[12.5px] text-muted-text">Duration: {elapsedLabel}</div>
             </div>
           </div>
+          {onDone ? (
+            <Button onClick={onDone} className="h-11 self-start rounded-xl bg-action px-5 text-[13px] font-semibold text-canvas hover:bg-action-dark">
+              {doneLabel}
+            </Button>
+          ) : (
+            <p className="text-[12.5px] text-muted-text">You can close this window now.</p>
+          )}
         </div>
       </div>
     );

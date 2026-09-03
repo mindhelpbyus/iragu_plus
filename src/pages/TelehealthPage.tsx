@@ -32,6 +32,7 @@ function TelehealthIdleShell() {
         startIdle
         showProviderBadge={isAdmin}
         onOpenAppointment={(appointmentId) => navigate(`/telehealth/${appointmentId}`)}
+        onDone={() => navigate('/telehealth')}
       />
     </div>
   );

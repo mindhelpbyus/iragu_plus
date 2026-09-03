@@ -1,8 +1,9 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, type MutableRefObject } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type MutableRefObject } from 'react';
 import { ConnectionState, RoomEvent, type Room } from 'livekit-client';
 import {
   LiveKitRoom,
   GridLayout,
+  FocusLayout,
   ParticipantTile,
   useTracks,
   useLocalParticipant,
@@ -63,6 +64,7 @@ const LiveKitCallInner = forwardRef<
   const connectionState = useConnectionState(room);
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], { onlySubscribed: false });
+  const [gridLayout, setGridLayout] = useState(true);
 
   useEffect(() => {
     if (connectionState === ConnectionState.Connected) {
@@ -88,6 +90,12 @@ const LiveKitCallInner = forwardRef<
         intentionalLeave.current = true;
         await room.disconnect();
       },
+      toggleScreenShare: async () => {
+        await localParticipant.setScreenShareEnabled(!localParticipant.isScreenShareEnabled);
+      },
+      cycleLayout: () => {
+        setGridLayout((g) => !g);
+      },
     }),
     [localParticipant, room, intentionalLeave],
   );
@@ -106,9 +114,13 @@ const LiveKitCallInner = forwardRef<
 
   return (
     <div className="h-full w-full bg-black">
-      <GridLayout tracks={tracks} style={{ height: '100%' }}>
-        <ParticipantTile />
-      </GridLayout>
+      {gridLayout ? (
+        <GridLayout tracks={tracks} style={{ height: '100%' }}>
+          <ParticipantTile />
+        </GridLayout>
+      ) : (
+        tracks[0] && <FocusLayout trackRef={tracks[0]} style={{ height: '100%' }} />
+      )}
     </div>
   );
 });

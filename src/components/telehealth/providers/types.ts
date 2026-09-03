@@ -28,4 +28,13 @@ export interface ProviderCallHandle {
   toggleAudio: () => Promise<void>;
   toggleVideo: () => Promise<void>;
   leave: () => Promise<void>;
+  /**
+   * Screen-share/layout are LiveKit-only for now — Jitsi/Zoom's own
+   * embedded UI already owns these concepts, so their adapters don't
+   * implement them. Optional here (rather than a required stub on every
+   * adapter) so VideoCallFrame can render those ControlBar buttons only
+   * when the mounted provider actually supports them.
+   */
+  toggleScreenShare?: () => Promise<void>;
+  cycleLayout?: () => void;
 }
