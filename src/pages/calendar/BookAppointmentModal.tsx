@@ -6,6 +6,9 @@ import { createAppointment, type AppointmentType, type AppointmentMode } from '.
 import { getMyTherapistId } from '../../api/therapistMe';
 import { getDaySlots, type TimeSlot } from '../../api/availability';
 import { ApiFetchError } from '../../api/client';
+import { publishAppointmentCard } from '../../api/chat';
+import { generateConversationId } from '../../lib/conversationId';
+import { logger } from '../../utils/secureLogger';
 import { addDays, formatDayShort, toDateKey } from './dateUtils';
 import { GuestAttendeesInput, type Attendee } from '../../components/calendar/GuestAttendeesInput';
 
@@ -200,7 +203,7 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
         .filter(Boolean)
         .join(' | ');
 
-      await createAppointment({
+      const created = await createAppointment({
         therapistId: String(therapistId),
         clientId,
         startTime: start.toISOString(),
@@ -212,6 +215,30 @@ export function BookAppointmentModal({ initialDate, initialStartTime, onClose, o
       });
       setDone(true);
       onBooked();
+
+      // Best-effort system card into the therapist<->client thread — mirrors
+      // therapistApp's own self-publish (backend-initial's
+      // publishAdminBookedAppointmentCard never fires here since the caller
+      // IS the therapist, not an admin acting on their behalf). A card that
+      // fails to publish must never fail the booking itself.
+      try {
+        const conversationId = await generateConversationId(created.clientId, created.therapistId);
+        await publishAppointmentCard({
+          conversationId,
+          appointmentId: created.id,
+          clientId: created.clientId,
+          therapistId: created.therapistId,
+          therapistName: created.therapistName,
+          clientName: created.clientName,
+          scheduledDateTime: created.startTime,
+          durationMinutes: Math.round((new Date(created.endTime).getTime() - new Date(created.startTime).getTime()) / 60000),
+          mode,
+          status: created.status,
+          event: 'initiated',
+        });
+      } catch (cardErr) {
+        logger.warn('Appointment card publish failed (booking unaffected)', { error: cardErr });
+      }
     } catch (err) {
       if (err instanceof ApiFetchError) {
         setError(err.message);

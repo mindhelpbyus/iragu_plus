@@ -217,6 +217,63 @@ async function publishChatEvent(channel: string, event: Record<string, unknown>)
   }
 }
 
+// ─── Appointment card (system card into the therapist↔client thread) ────
+// Mirrors therapistApp's ChatMessageNotifier.publishAppointmentCard exactly
+// (same content shape, same messageType) so every client renders the same
+// card regardless of which app booked the session. backend-initial's own
+// publishAdminBookedAppointmentCard only fires when an admin books on behalf
+// of a client it did not itself initiate — never when the caller IS the
+// therapist, which is every booking made through this app, so iragu_plus
+// must self-publish here exactly like therapistApp already does for itself.
+
+export interface AppointmentCardInput {
+  conversationId: string;
+  appointmentId: string;
+  clientId: string;
+  therapistId: string;
+  therapistName: string;
+  clientName: string;
+  /** ISO */
+  scheduledDateTime: string;
+  durationMinutes: number;
+  /** 'video' | 'in_person' — converted to the cross-client wire values ('video' | 'inPerson'). */
+  mode: 'video' | 'in_person';
+  status: string;
+  /** e.g. 'initiated' for a fresh booking — matches therapistApp's own event vocabulary. */
+  event: string;
+}
+
+export async function publishAppointmentCard(input: AppointmentCardInput): Promise<void> {
+  const channel = `/chat/channel/${input.conversationId}`;
+  const content = JSON.stringify({
+    cardVersion: 1,
+    appointmentId: input.appointmentId,
+    clientId: input.clientId,
+    therapistId: input.therapistId,
+    therapistName: input.therapistName,
+    clientName: input.clientName,
+    scheduledDateTime: input.scheduledDateTime,
+    durationMinutes: input.durationMinutes,
+    consultationType: input.mode === 'video' ? 'video' : 'inPerson',
+    status: input.status,
+    sessionId: input.appointmentId,
+    event: input.event,
+  });
+
+  await publishChatEvent(channel, {
+    messageId: crypto.randomUUID(),
+    conversationId: input.conversationId,
+    clientId: input.clientId,
+    therapistId: input.therapistId,
+    content,
+    channelName: channel,
+    createdAt: new Date().toISOString(),
+    messageType: 'appointment',
+    senderId: input.therapistId,
+    senderName: input.therapistName,
+  });
+}
+
 export interface SendMessageInput {
   conversationId: string;
   clientId: string;
