@@ -1,8 +1,10 @@
-import { Search, ChevronLeft, ChevronRight, CircleSlash, Plus } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, CircleSlash, Plus, PanelLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { CalView } from './calendarConstants';
 
 interface CalendarToolbarProps {
+  panelOpen: boolean;
+  onPanelToggle: () => void;
   subtitle: string;
   search: string;
   onSearchChange: (v: string) => void;
@@ -33,6 +35,8 @@ const VIEWS: { id: CalView; label: string }[] = [
 ];
 
 export function CalendarToolbar({
+  panelOpen,
+  onPanelToggle,
   subtitle,
   search,
   onSearchChange,
@@ -57,6 +61,22 @@ export function CalendarToolbar({
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onPanelToggle}
+          title={panelOpen ? 'Collapse panel' : 'Expand panel'}
+          aria-label={panelOpen ? 'Collapse panel' : 'Expand panel'}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+            panelOpen
+              ? 'border-rule bg-surface text-[#48382E] hover:bg-action-light/60'
+              : 'border-action-border bg-action-light text-action-dark'
+          }`}
+        >
+          <PanelLeft className="h-[15px] w-[15px]" />
+        </button>
+
+        <div className="h-6 w-px bg-rule" />
+
         {therapistFilterSlot && (
           <>
             {therapistFilterSlot}

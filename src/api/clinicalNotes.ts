@@ -34,3 +34,67 @@ export function createClinicalNote(request: CreateClinicalNoteRequest) {
     rawEnvelope: true,
   }).then((res) => res.data);
 }
+
+/** Real backend.ClinicalNote shape — see backend-initial/prisma/schema.prisma. */
+export const clinicalNoteSchema = z.object({
+  id: z.number(),
+  appointmentId: z.number(),
+  therapistId: z.number(),
+  clientId: z.number().nullable(),
+  noteType: z.string(),
+  content: z.string().nullable(),
+  subjective: z.string().nullable(),
+  objective: z.string().nullable(),
+  assessment: z.string().nullable(),
+  plan: z.string().nullable(),
+  isSigned: z.boolean(),
+  signedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ClinicalNoteRecord = z.infer<typeof clinicalNoteSchema>;
+
+/** GET /clinical-notes/therapist?therapistId= — assertSelf-enforced server-side, always the caller's own notes. */
+export function listTherapistNotes(therapistId: string, noteType?: string) {
+  const params = new URLSearchParams({ therapistId });
+  if (noteType) params.set('noteType', noteType);
+  return apiFetch(`/clinical-notes/therapist?${params.toString()}`, {
+    schema: z.object({ success: z.boolean(), data: z.array(clinicalNoteSchema) }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}
+
+export function getClinicalNote(id: number) {
+  return apiFetch(`/clinical-notes/${id}`, {
+    schema: z.object({ success: z.boolean(), data: clinicalNoteSchema }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}
+
+export interface UpdateClinicalNoteRequest {
+  content?: string;
+  subjective?: string;
+  objective?: string;
+  assessment?: string;
+  plan?: string;
+}
+
+/** 403s server-side outside the 48h edit window or once signed — this client doesn't pre-check either, the server is the source of truth. */
+export function updateClinicalNote(id: number, patch: UpdateClinicalNoteRequest) {
+  return apiFetch(`/clinical-notes/${id}`, {
+    method: 'PUT',
+    body: patch,
+    schema: z.object({ success: z.boolean(), data: clinicalNoteSchema }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}
+
+/** Caller-derived signer server-side — never pass who signed. */
+export function signClinicalNote(id: number) {
+  return apiFetch(`/clinical-notes/${id}/sign`, {
+    method: 'POST',
+    body: {},
+    schema: z.object({ success: z.boolean(), data: clinicalNoteSchema }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}

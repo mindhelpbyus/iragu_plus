@@ -3,6 +3,7 @@ import { AgendaPanel } from './AgendaPanel';
 import { SlotsPanel } from './SlotsPanel';
 import type { DayAvailability } from './useAvailabilityRange';
 import type { CalEvent } from './calendarConstants';
+import type { TherapistSummary } from '../../api/orgTherapists';
 
 export type SideTab = 'calendar' | 'agenda' | 'slots';
 
@@ -19,6 +20,13 @@ interface CalendarSidePanelProps {
   availabilityLoading: boolean;
   hasEventsOn: (dateKey: string) => boolean;
   agendaEventsByDate: Record<string, CalEvent[]>;
+  /** Practice mode's "Practice calendars" checkboxes on the Slots tab — same
+   *  selection state the toolbar's TherapistFilter drives, so checking one
+   *  updates the other. */
+  isPractice?: boolean;
+  therapists?: TherapistSummary[];
+  selectedTherapistIds?: number[];
+  onSelectedTherapistIdsChange?: (ids: number[] | undefined) => void;
 }
 
 const TABS: { id: SideTab; label: string }[] = [
@@ -40,6 +48,10 @@ export function CalendarSidePanel({
   availabilityLoading,
   hasEventsOn,
   agendaEventsByDate,
+  isPractice = false,
+  therapists,
+  selectedTherapistIds,
+  onSelectedTherapistIdsChange,
 }: CalendarSidePanelProps) {
   return (
     <div className="overflow-hidden transition-[width] duration-300" style={{ width: open ? '280px' : '0px' }}>
@@ -71,7 +83,15 @@ export function CalendarSidePanel({
         )}
         {sideTab === 'agenda' && <AgendaPanel eventsByDate={agendaEventsByDate} />}
         {sideTab === 'slots' && (
-          <SlotsPanel weekStart={weekStart} availabilityByDate={availabilityByDate} loading={availabilityLoading} />
+          <SlotsPanel
+            weekStart={weekStart}
+            availabilityByDate={availabilityByDate}
+            loading={availabilityLoading}
+            isPractice={isPractice}
+            therapists={therapists}
+            selectedTherapistIds={selectedTherapistIds}
+            onSelectedTherapistIdsChange={onSelectedTherapistIdsChange}
+          />
         )}
       </div>
     </div>

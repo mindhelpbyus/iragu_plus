@@ -22,6 +22,17 @@ function formatTimeRange(startIso: string, endIso: string): string {
   return `${fmt(startIso)} – ${fmt(endIso)}`;
 }
 
+/** Minutes until the next not-yet-started session today, or null if none remain. */
+export function nextInMinutes(appointments: RawAppointment[]): number | null {
+  const now = Date.now();
+  const upcoming = appointments
+    .map((a) => new Date(a.startTime).getTime())
+    .filter((t) => t > now)
+    .sort((a, b) => a - b);
+  if (upcoming.length === 0) return null;
+  return Math.round((upcoming[0] - now) / 60_000);
+}
+
 export function TodaysSchedule() {
   const navigate = useNavigate();
   const [appointments, setAppointments] = useState<RawAppointment[]>([]);
@@ -53,7 +64,13 @@ export function TodaysSchedule() {
         <div>
           <h3 className="text-[17px] font-semibold text-ink">Today's schedule</h3>
           <div className="mt-0.5 text-xs text-muted-text">
-            {loading ? 'Loading…' : `${appointments.length} session${appointments.length === 1 ? '' : 's'}`}
+            {loading
+              ? 'Loading…'
+              : (() => {
+                  const nextIn = nextInMinutes(appointments);
+                  const base = `${appointments.length} session${appointments.length === 1 ? '' : 's'}`;
+                  return nextIn == null ? base : `${base} · Next in ${nextIn}m`;
+                })()}
           </div>
         </div>
         <button

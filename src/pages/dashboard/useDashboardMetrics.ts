@@ -29,9 +29,21 @@ function endOfWeek(d: Date): Date {
   return result;
 }
 
+/** "+N vs last week" / "N vs last week" (N already negative) / "Same as last
+ *  week" — null only when last week's count isn't available (never fabricate
+ *  a comparison against a failed fetch). */
+export function formatSessionsDelta(thisWeekCount: number, lastWeekCount: number | null): string | null {
+  if (lastWeekCount === null) return null;
+  const diff = thisWeekCount - lastWeekCount;
+  return diff === 0 ? 'Same as last week' : diff > 0 ? `+${diff} vs last week` : `${diff} vs last week`;
+}
+
 export interface DashboardMetrics {
   activeClients: number | null;
   sessionsThisWeek: number | null;
+  /** "+N vs last week" / "N fewer vs last week" — a real week-over-week
+   *  comparison, omitted (not zero) when last week's count isn't available. */
+  sessionsThisWeekDelta: string | null;
   sessionsToday: number | null;
   avgMoodScore: string | null;
   loading: boolean;
@@ -50,6 +62,7 @@ export interface DashboardMetrics {
 export function useDashboardMetrics(): DashboardMetrics {
   const [activeClients, setActiveClients] = useState<number | null>(null);
   const [sessionsThisWeek, setSessionsThisWeek] = useState<number | null>(null);
+  const [sessionsThisWeekDelta, setSessionsThisWeekDelta] = useState<string | null>(null);
   const [sessionsToday, setSessionsToday] = useState<number | null>(null);
   const [avgMoodScore, setAvgMoodScore] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,21 +76,32 @@ export function useDashboardMetrics(): DashboardMetrics {
         const now = new Date();
         const weekStart = startOfWeek(now);
         const weekEnd = endOfWeek(now);
+        const lastWeekStart = new Date(weekStart);
+        lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+        const lastWeekEnd = new Date(weekEnd);
+        lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
         const todayKey = now.toISOString().slice(0, 10);
 
-        const [clientsRes, weekAppointments] = await Promise.all([
+        const [clientsRes, weekAppointments, lastWeekAppointments] = await Promise.all([
           getMyClients({ isActive: 'true', limit: MOOD_SAMPLE_SIZE }),
           getMyAppointments(therapistId, {
             startDate: weekStart.toISOString().slice(0, 10),
             endDate: weekEnd.toISOString().slice(0, 10),
           }).catch(() => []),
+          getMyAppointments(therapistId, {
+            startDate: lastWeekStart.toISOString().slice(0, 10),
+            endDate: lastWeekEnd.toISOString().slice(0, 10),
+          }).catch(() => null),
         ]);
         if (cancelled) return;
 
         const liveAppointments = weekAppointments.filter((a) => a.status !== 'cancelled');
+        const lastWeekLive =
+          lastWeekAppointments === null ? null : lastWeekAppointments.filter((a) => a.status !== 'cancelled').length;
         setSessionsThisWeek(liveAppointments.length);
         setSessionsToday(liveAppointments.filter((a) => a.startTime.slice(0, 10) === todayKey).length);
         setActiveClients(clientsRes.pagination.total);
+        setSessionsThisWeekDelta(formatSessionsDelta(liveAppointments.length, lastWeekLive));
 
         const moodEnd = now.toISOString();
         const moodStart = new Date(now.getTime() - MOOD_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -99,5 +123,5 @@ export function useDashboardMetrics(): DashboardMetrics {
     };
   }, []);
 
-  return { activeClients, sessionsThisWeek, sessionsToday, avgMoodScore, loading };
+  return { activeClients, sessionsThisWeek, sessionsThisWeekDelta, sessionsToday, avgMoodScore, loading };
 }

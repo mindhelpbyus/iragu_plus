@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/button';
 import {
@@ -40,6 +41,17 @@ function formatNext(iso: string | null): string {
 export default function ClientsPage() {
   const navigate = useNavigate();
   const { rows, loading, error, page, setPage, totalPages, total, statusFilter, setStatusFilter, isOrg } = useClients();
+  const [search, setSearch] = useState('');
+
+  // Client-side over the current page only — this backend's clients list has
+  // no server-side search param (confirmed: no `search` handling in
+  // backend-initial's clients Lambda), so this filters what's already
+  // loaded rather than silently doing nothing.
+  const visibleRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q));
+  }, [rows, search]);
 
   return (
     <>
@@ -64,6 +76,8 @@ export default function ClientsPage() {
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-[13px] w-[13px] -translate-y-1/2 text-muted-text" />
               <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by name or email"
                 className="h-9 w-[240px] rounded-lg border border-rule bg-surface pl-[30px] pr-2.5 text-[13px] text-ink outline-none transition-colors focus:border-action"
               />
@@ -98,13 +112,15 @@ export default function ClientsPage() {
 
             {loading && <div className="p-10 text-center text-sm text-muted-text">Loading clients…</div>}
             {error && <div className="p-10 text-center text-sm text-[#B06060]">{error}</div>}
-            {!loading && !error && rows.length === 0 && (
-              <div className="p-10 text-center text-sm text-muted-text">No clients found.</div>
+            {!loading && !error && visibleRows.length === 0 && (
+              <div className="p-10 text-center text-sm text-muted-text">
+                {rows.length === 0 ? 'No clients found.' : 'No clients match your search.'}
+              </div>
             )}
 
             {!loading &&
               !error &&
-              rows.map((c) => (
+              visibleRows.map((c) => (
                 <button
                   key={c.id}
                   type="button"
@@ -121,8 +137,16 @@ export default function ClientsPage() {
                       <div className="truncate text-xs text-muted-text">{c.email}</div>
                     </span>
                   </span>
-                  <span>
+                  <span className="flex items-center gap-1.5">
                     <StatusPill status={c.status} />
+                    {c.safetyRisk === 'high' && (
+                      <span
+                        title="High safety risk on file"
+                        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[#F4E3E3] text-[#8E4848]"
+                      >
+                        <AlertTriangle className="h-3 w-3" strokeWidth={2} />
+                      </span>
+                    )}
                   </span>
                   <span className="text-[13px] text-ink">{c.totalSessions}</span>
                   <span>

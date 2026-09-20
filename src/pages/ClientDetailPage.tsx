@@ -4,13 +4,28 @@ import { ChevronLeft, MessageSquare, Video, ShieldCheck } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/button';
 import { getClientDetail, getClientNotes, getClientConsent, type ClientDetail, type ClinicalNote } from '../api/clientDetail';
-import { getClientAppointments } from '../api/appointmentsBackend';
+import { getClientAppointments, type AppointmentDetails } from '../api/appointmentsBackend';
 import { getClientMoods, getDateRangeForMoods, type DailyMood } from '../api/moods';
 import { MoodIndicator } from '../components/ui/MoodIndicator';
 import { initialsOf } from './calendar/calendarConstants';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) +
+    ' · ' + new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** The next confirmed/scheduled session in the future, or null if none. */
+export function nextSessionOf(appointments: AppointmentDetails[]): AppointmentDetails | null {
+  const now = Date.now();
+  const upcoming = appointments.filter(
+    (a) => (a.status === 'confirmed' || a.status === 'scheduled') && new Date(a.startTime).getTime() > now,
+  );
+  if (upcoming.length === 0) return null;
+  return upcoming.reduce((soonest, a) => (a.startTime < soonest.startTime ? a : soonest));
 }
 
 export default function ClientDetailPage() {
@@ -21,6 +36,7 @@ export default function ClientDetailPage() {
   const [notes, setNotes] = useState<ClinicalNote[]>([]);
   const [consent, setConsent] = useState<Awaited<ReturnType<typeof getClientConsent>> | null>(null);
   const [moods, setMoods] = useState<DailyMood[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +63,7 @@ export default function ClientDetailPage() {
         setNotes(noteList);
         setConsent(consentInfo);
         setMoods(moodList);
+        setAppointments(appointments);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load client');
@@ -110,15 +127,18 @@ export default function ClientDetailPage() {
 
               <div className="mb-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
                 <div className="rounded-[14px] border border-rule bg-surface p-5">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Booking history</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Sessions completed</div>
                   <div className="mt-2 text-2xl font-semibold text-ink">
-                    {client.hasConfirmedBooking ? 'Has sessions' : 'No sessions yet'}
+                    {appointments.filter((a) => a.status === 'completed').length}
                   </div>
                 </div>
                 <div className="rounded-[14px] border border-rule bg-surface p-5">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Preferred therapy</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">Next session</div>
                   <div className="mt-2 text-2xl font-semibold text-ink">
-                    {client.clientProfile?.preferredTherapyType ?? '—'}
+                    {(() => {
+                      const next = nextSessionOf(appointments);
+                      return next ? formatDateTime(next.startTime) : '—';
+                    })()}
                   </div>
                 </div>
                 <div className="flex flex-col justify-between rounded-[14px] border border-rule bg-surface p-5">
@@ -158,6 +178,7 @@ export default function ClientDetailPage() {
                         ['Date of birth', client.dateOfBirth ? formatDate(client.dateOfBirth) : '—'],
                         ['Phone', client.phone ?? '—'],
                         ['Email', client.email],
+                        ['Preferred therapy', client.clientProfile?.preferredTherapyType ?? '—'],
                         [
                           'Languages',
                           client.clientProfile?.preferredLanguages?.length

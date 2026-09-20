@@ -1,8 +1,15 @@
 import { type CalEvent } from './calendarConstants';
-import { addDays, isSameDay, startOfWeek, toDateKey } from './dateUtils';
+import { addDays, isSameDay, startOfWeek, toDateKey, getLeaveBlocksForDay } from './dateUtils';
 import type { TherapistSummary } from '../../api/orgTherapists';
+import type { LeaveRecord } from '../../api/leave';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** True when a leave record overlaps this day — drives the cell's muted background and "Blocked" tag. */
+export function isDayBlocked(d: Date, leaves: LeaveRecord[] | undefined): boolean {
+  if (!leaves) return false;
+  return getLeaveBlocksForDay(d, leaves).length > 0;
+}
 
 /** 6 full weeks (42 days), Monday-first, covering the given month plus its leading/trailing days. */
 function monthGridDates(monthAnchor: Date): Date[] {
@@ -26,9 +33,11 @@ interface MonthViewProps {
    *  mode) rather than reading eventsByDate for the caller's own schedule. */
   therapists?: TherapistSummary[];
   eventsByTherapist?: Record<string, Record<number, CalEvent[]>>;
+  /** My Calendar mode only, same as WeekView/DayView — the caller's own blocked days. */
+  leaves?: LeaveRecord[];
 }
 
-export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEvent, search, therapists, eventsByTherapist }: MonthViewProps) {
+export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEvent, search, therapists, eventsByTherapist, leaves }: MonthViewProps) {
   const cells = monthGridDates(monthAnchor);
   const today = new Date();
   const isMultiTherapist = !!therapists?.length && !!eventsByTherapist;
@@ -55,8 +64,9 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
           const otherMonth = d.getMonth() !== monthAnchor.getMonth();
           const isToday = isSameDay(d, today);
           const events = eventsForDay(toDateKey(d));
-          const visible = events.slice(0, 3);
+          const visible = events.slice(0, 2);
           const more = events.length - visible.length;
+          const isBlocked = isDayBlocked(d, leaves);
 
           return (
             <div
@@ -66,16 +76,24 @@ export function MonthView({ monthAnchor, eventsByDate, onSelectDay, onSelectEven
               onClick={() => onSelectDay(d)}
               onKeyDown={(e) => e.key === 'Enter' && onSelectDay(d)}
               className="box-border min-h-[104px] cursor-pointer border-b border-r border-gray-200 p-2 text-left transition-colors hover:bg-canvas"
+              style={isBlocked ? { background: '#FBEFEF' } : undefined}
             >
-              <div
-                className="mb-1.5 flex h-6 w-6 items-center justify-center rounded-full text-xs"
-                style={{
-                  fontWeight: isToday ? 600 : 400,
-                  color: isToday ? '#fff' : otherMonth ? '#C9BEAD' : 'var(--ink)',
-                  background: isToday ? '#1E7048' : 'transparent',
-                }}
-              >
-                {d.getDate()}
+              <div className="mb-1.5 flex items-center justify-between gap-1">
+                <div
+                  className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs"
+                  style={{
+                    fontWeight: isToday ? 600 : 400,
+                    color: isToday ? '#fff' : otherMonth ? '#C9BEAD' : 'var(--ink)',
+                    background: isToday ? '#1E7048' : 'transparent',
+                  }}
+                >
+                  {d.getDate()}
+                </div>
+                {isBlocked && (
+                  <span className="truncate rounded-full bg-[#F4E3E3] px-1.5 py-0.5 text-[9px] font-semibold text-[#8E4848]">
+                    Blocked
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-col gap-1">

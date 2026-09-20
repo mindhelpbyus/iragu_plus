@@ -27,6 +27,7 @@ import { clearMyTherapistIdCache } from '../../api/therapistMe';
 import type { OrgContext } from '../../api/orgContext';
 import iraguPlusMark from '../../assets/brand/iragu-plus-mark.svg';
 import { NotificationBell } from './NotificationBell';
+import { useUnreadMessagesCount } from './useUnreadMessagesCount';
 
 interface NavItem {
   to: string;
@@ -36,6 +37,11 @@ interface NavItem {
    *  these permission keys (GET /me/org-context) — never a hardcoded role
    *  check. Used for the org_owner-only settings:* capabilities. */
   requiresAnyPermission?: string[];
+  /** Which live count backs this item's pill badge, if any. Resolved against
+   *  real data at render time — never a hardcoded number. Add a new source
+   *  here (and wire its count in AppSidebar's body) only once a real count
+   *  exists; an item with no real number gets no badge rather than a fake one. */
+  badgeSource?: 'unreadMessages';
 }
 
 const SETTINGS_PERMISSIONS = [
@@ -68,7 +74,7 @@ const SECTIONS: NavSection[] = [
   {
     label: 'Communication',
     items: [
-      { to: '/messages', label: 'Messages', icon: MessageSquare },
+      { to: '/messages', label: 'Messages', icon: MessageSquare, badgeSource: 'unreadMessages' },
       { to: '/telehealth', label: 'Telehealth', icon: Video },
     ],
   },
@@ -107,6 +113,14 @@ export function isNavItemVisible(item: NavItem, orgContext: OrgContext | null, l
   return item.requiresAnyPermission.some((p) => hasPermission(orgContext, p));
 }
 
+/** Clay for unread messages (per design — the one badge color reserved for
+ *  something that needs a reply), sage for every other live count. */
+function badgeToneClasses(item: NavItem): string {
+  return item.badgeSource === 'unreadMessages'
+    ? 'bg-[#F4E3E3] text-[#8E4848]'
+    : 'bg-action-light text-action-dark';
+}
+
 const FOOTER_ITEMS: NavItem[] = [
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
   { to: '/support', label: 'Help & Support', icon: HelpCircle },
@@ -118,6 +132,12 @@ export function AppSidebar() {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const { orgContext, loading: orgContextLoading } = useOrgContext();
+  const unreadMessages = useUnreadMessagesCount();
+
+  const badgeCountFor = (item: NavItem): number | null => {
+    if (item.badgeSource === 'unreadMessages') return unreadMessages > 0 ? unreadMessages : null;
+    return null;
+  };
 
   const initials = (user?.name ?? 'Therapist')
     .split(' ')
@@ -203,8 +223,24 @@ export function AppSidebar() {
                 }
                 style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
               >
-                <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
+                <span className="relative flex-shrink-0">
+                  <item.icon className="h-[18px] w-[18px]" />
+                  {collapsed && badgeCountFor(item) !== null && (
+                    <span
+                      className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ${
+                        item.badgeSource === 'unreadMessages' ? 'bg-[#B06060]' : 'bg-action'
+                      }`}
+                    />
+                  )}
+                </span>
                 {!collapsed && <span className="mr-auto truncate">{item.label}</span>}
+                {!collapsed && badgeCountFor(item) !== null && (
+                  <span
+                    className={`flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold ${badgeToneClasses(item)}`}
+                  >
+                    {badgeCountFor(item)! > 99 ? '99+' : badgeCountFor(item)}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

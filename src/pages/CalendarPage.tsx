@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { useOrgContext, hasMultiTherapistCalendars } from './calendar/useOrgContext';
 import { CalendarToolbar } from './calendar/CalendarToolbar';
@@ -237,6 +236,8 @@ export default function CalendarPage() {
             setAnchorDate(t);
             setMiniMonth(t);
           }}
+          panelOpen={panelOpen}
+          onPanelToggle={() => setPanelOpen((v) => !v)}
           onBlockTimeOff={() => setBlockOpen(true)}
           onBook={() => handleBookSlot(anchorDate)}
           showModeSwitch={showModeSwitch}
@@ -285,7 +286,10 @@ export default function CalendarPage() {
           </div>
         )}
 
-        <div className="relative mx-auto flex max-w-[1400px] items-start gap-5">
+        <div
+          className="mx-auto flex max-w-[1400px] items-start transition-[gap] duration-300"
+          style={{ gap: panelOpen ? '20px' : '0px' }}
+        >
           <CalendarSidePanel
             open={panelOpen}
             sideTab={sideTab}
@@ -299,18 +303,11 @@ export default function CalendarPage() {
             availabilityLoading={availabilityLoading}
             hasEventsOn={hasEventsOn}
             agendaEventsByDate={agendaEventsByDate}
+            isPractice={isPractice}
+            therapists={orgTherapists}
+            selectedTherapistIds={selectedTherapistIds}
+            onSelectedTherapistIdsChange={setSelectedTherapistIds}
           />
-
-          <button
-            type="button"
-            onClick={() => setPanelOpen((v) => !v)}
-            title={panelOpen ? 'Collapse panel' : 'Expand panel'}
-            aria-label={panelOpen ? 'Collapse panel' : 'Expand panel'}
-            className="absolute top-8 z-10 flex h-12 w-[18px] items-center justify-center rounded-r-md border border-l-0 border-rule bg-surface text-muted-text shadow-[0_1px_2px_0_rgba(28,24,18,.04)] transition-[left] duration-300 hover:bg-action-light/60 hover:text-action-dark"
-            style={{ left: panelOpen ? '280px' : '0px' }}
-          >
-            {panelOpen ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          </button>
 
           <div className="min-w-0 flex-1">
             {(isPractice ? orgLoading : loading) && (
@@ -360,6 +357,7 @@ export default function CalendarPage() {
                 search={search}
                 therapists={therapistsForViews}
                 eventsByTherapist={isPractice ? eventsByTherapist : undefined}
+                leaves={!isPractice ? leaves : undefined}
               />
             )}
           </div>

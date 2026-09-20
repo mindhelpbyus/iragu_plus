@@ -30,9 +30,16 @@ export default function DashboardPage() {
   // top-line figure is its own product decision (which period, which
   // framing); see EarningsPage for the real billing_payment-backed numbers.
   // The activity feed is the real TaskActivityFeed card below, not a metric.
+  // Kept a deliberate 3-up grid (not 4) below so it reads as complete, not
+  // like a card is missing.
   const metricCards: (MetricCardData & { icon: React.ReactNode })[] = [
     { label: 'Active clients', value: metrics.activeClients != null ? String(metrics.activeClients) : null, icon: <Users /> },
-    { label: 'Sessions this week', value: metrics.sessionsThisWeek != null ? String(metrics.sessionsThisWeek) : null, icon: <CalendarDays /> },
+    {
+      label: 'Sessions this week',
+      value: metrics.sessionsThisWeek != null ? String(metrics.sessionsThisWeek) : null,
+      delta: metrics.sessionsThisWeekDelta ?? undefined,
+      icon: <CalendarDays />,
+    },
     { label: 'Avg mood score', value: metrics.avgMoodScore != null ? `${metrics.avgMoodScore} / 10` : null, icon: <ActivityIcon /> },
   ];
 
@@ -70,7 +77,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="mx-auto max-w-[1400px]">
-          <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
             {metricCards.map((m) => (
               <MetricCard key={m.label} {...m} />
             ))}
