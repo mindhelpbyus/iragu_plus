@@ -275,7 +275,7 @@ export function InstantSessionPanel({ roomId, view, callStartedAt }: InstantSess
                       className={
                         isMine
                           ? 'max-w-[85%] rounded-2xl rounded-br-sm bg-action-light px-3 py-2 text-xs text-action-dark'
-                          : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-surface-sage px-3 py-2 text-xs text-body-text'
+                          : 'max-w-[85%] rounded-2xl rounded-bl-sm bg-surface-warm px-3 py-2 text-xs text-body-text'
                       }
                     >
                       {!isMine && <div className="mb-0.5 text-[10px] font-semibold text-muted-text">{m.senderIdentity}</div>}

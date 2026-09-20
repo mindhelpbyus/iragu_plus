@@ -193,8 +193,9 @@ implemented) — every gap below is a missing structural element, not a wrong va
 - [ ] **Failover state** drops the signature 4-row fallback-chain list (Zoom
       dropped → LiveKit negotiating → Jitsi queued → WhatsApp standby),
       replaced by one generic message; missing the "Run diagnostics" button.
-- [ ] Side panel is not the spec'd fixed 400px — floats with viewport width in
-      one place, fixed at 380px (not 400px) in another.
+- [x] Side panel width — fixed to 400px in both `TelehealthSplitView.tsx`
+      (was a fluid 5/12 grid column) and `InstantRoomPage.tsx` (was 380px)
+      (2026-09-19).
 - [ ] Control bar missing whiteboard, recording, invite, diagnostics, and the
       distinct clay-toned Escalate button — design has ~10 controls, impl has
       at most 6.
@@ -204,10 +205,22 @@ implemented) — every gap below is a missing structural element, not a wrong va
 - [ ] Notes tab is a plain 4-field editable form instead of the design's
       read-only Presenting-concern/Intervention/Homework eyebrow-labeled
       blocks.
-- [ ] Chat bubbles use the wrong tint for incoming messages (sage/green instead
-      of warm/cream), losing the "them vs. you" warm/cool contrast.
-- [ ] Waiting room has 1 of 2 buttons and drops the "WhatsApp invite sent as
-      backup" line from the status pill.
+- [x] Chat bubbles — incoming messages switched from `bg-surface-sage` to
+      `bg-surface-warm` in both `SessionPanel.tsx` and `InstantSessionPanel.tsx`,
+      restoring the "them vs. you" warm/cool contrast (2026-09-19).
+- [~] Waiting room status pill now shows "they've been notified you're
+      waiting" once video-service's real `waitingAlertRaised` flag goes true
+      (the actual threshold-based signal behind the design's "WhatsApp invite
+      sent as backup" line — confirmed via `waiting-room-alert-sweeper`'s real
+      alert-dispatch mechanism, which fans out to push+email+WhatsApp on the
+      same threshold). Copy says "notified", not "via WhatsApp" specifically,
+      since WhatsApp only fires if the recipient has opted in with a verified
+      phone (2026-09-19). **Still missing**: the 2nd button (design:
+      "Send a reminder" for therapist / "Leave the room" for client) — no
+      manual "send now" endpoint exists on video-service (the sweeper is
+      cron-only), and there's no defined destination for a guest "leave"
+      action without a real account to return to. Needs backend work, not a
+      frontend-only fix — flagged, not built here.
 
 ## P3 — Login / Signup
 

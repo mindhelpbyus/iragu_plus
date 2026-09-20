@@ -187,6 +187,7 @@ export function VideoCallFrame({
             elapsedLabel={formatTimer(call.seconds)}
             onDone={onDone}
             showRoutingBanner
+            waitingAlertRaised={call.credentials?.waitingAlertRaised}
           />
         )}
       </div>

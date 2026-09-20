@@ -173,6 +173,7 @@ export default function GuestJoinPage() {
             waitingSub="You'll connect automatically once the host joins."
             elapsedLabel={formatTimer(call.seconds)}
             onDone={null}
+            waitingAlertRaised={call.credentials?.waitingAlertRaised}
           />
         )}
       </div>

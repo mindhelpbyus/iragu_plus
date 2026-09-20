@@ -56,7 +56,7 @@ export default function InstantRoomPage() {
       </div>
 
       {panelOpen && isTherapist && (
-        <div className="hidden h-full min-h-0 w-[380px] flex-none lg:flex">
+        <div className="hidden h-full min-h-0 w-[400px] flex-none lg:flex">
           <InstantSessionPanel roomId={roomId} view={view} callStartedAt={callStartedAt} />
         </div>
       )}

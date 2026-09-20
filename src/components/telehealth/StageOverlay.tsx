@@ -47,6 +47,14 @@ interface StageOverlayProps {
   waitingTitle: string;
   waitingSub: string;
   elapsedLabel: string;
+  /**
+   * video-service's own real threshold flag (`JoinCredentials.waitingAlertRaised`)
+   * — true once the backend's waiting-room-alert-sweeper has started
+   * notifying the other party (push + email, WhatsApp if they've opted in
+   * and have a verified phone). Not a delivery guarantee for every channel,
+   * so the copy below says "notified", not "sent via WhatsApp" specifically.
+   */
+  waitingAlertRaised?: boolean;
   /** Where the ended card's action goes once the session has ended — it has no other way out otherwise. Omit entirely for a guest with no account to return to. */
   onDone: (() => void) | null;
   /** Defaults to "Back to telehealth" — override for contexts where that destination doesn't make sense (e.g. a guest link). */
@@ -82,6 +90,7 @@ export function StageOverlay({
   onDone,
   doneLabel = 'Back to telehealth',
   showRoutingBanner,
+  waitingAlertRaised,
 }: StageOverlayProps) {
   const readiness = useConnectionReadiness();
   const quality = qualityLabel(readiness.effectiveType);
@@ -174,6 +183,7 @@ export function StageOverlay({
         <div className="mt-2 flex items-center gap-2 rounded-full bg-sage/[.14] px-3.5 py-2 text-[11.5px] text-[#9BBBA7]">
           <Loader2 className="h-3 w-3 animate-spin" />
           Room held open · you'll connect automatically
+          {waitingAlertRaised ? ' · they\'ve been notified you\'re waiting' : ''}
         </div>
       </div>
     );

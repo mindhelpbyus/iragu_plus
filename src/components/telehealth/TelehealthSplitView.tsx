@@ -82,8 +82,8 @@ export const TelehealthSplitView: React.FC<{
 
   return (
     <div className="flex h-[calc(100vh-80px)] flex-col gap-3 bg-canvas p-4 text-ink">
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="flex h-full min-h-0 flex-col lg:col-span-7">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        <div className="flex h-full min-h-0 flex-1 flex-col">
           <VideoCallFrame
             requestJoinCredentials={requestJoinCredentials}
             displayName={displayName}
@@ -99,7 +99,7 @@ export const TelehealthSplitView: React.FC<{
         </div>
 
         {panelOpen && (
-          <div className="flex h-full min-h-0 flex-col gap-3 lg:col-span-5">
+          <div className="flex h-full min-h-0 w-full flex-none flex-col gap-3 lg:w-[400px]">
             <SessionPanel
               appointment={appointment}
               client={client}
