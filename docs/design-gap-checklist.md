@@ -35,11 +35,16 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
       modal — notes require a real `appointmentId` server-side
       (`assertAppointmentTie`), so it prompts the therapist to start from
       Calendar instead of building a parallel client-picker flow.
-- [ ] **Requests** — full build spec ready (pending/accepted/declined pill filter +
-      request cards with Accept/Suggest-time/Decline actions). **No backend
-      exists for this** — no lambda, no "pending therapist review" appointment
-      status (the 9-value status enum has no such state). Needs a real backend
-      decision before frontend work, not just a UI build.
+- [x] **Requests** — real backend built (Part H, 2026-09-20): new
+      `ClientInquiry`/`RescheduleRequest` tables, 7 routes, notification
+      fan-out, gated behind a `requests_workflow` FeatureConfig row (off by
+      default). Real `api/requests.ts` + `useRequests` + rebuilt
+      `RequestsPage.tsx` — pending/approved/declined pill filter, kind-badged
+      request cards, real Approve/Decline actions. **Not the design's literal
+      3-button layout** — "Suggest another time" dropped (no backend support
+      for a counter-offer flow; would need its own real design), "Accept"
+      renamed "Approve" to match the real action. Sidebar badge wired to the
+      real pending count.
 - [ ] **Analytics** — full build spec ready (6-month revenue bar chart, session-mix
       breakdown bars by appointment type, attendance-rate stat tile). Needs
       backend: monthly revenue rollup, appointment-type distribution %,

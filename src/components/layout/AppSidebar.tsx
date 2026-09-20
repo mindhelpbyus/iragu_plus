@@ -28,6 +28,7 @@ import type { OrgContext } from '../../api/orgContext';
 import iraguPlusMark from '../../assets/brand/iragu-plus-mark.svg';
 import { NotificationBell } from './NotificationBell';
 import { useUnreadMessagesCount } from './useUnreadMessagesCount';
+import { usePendingRequestsCount } from './usePendingRequestsCount';
 
 interface NavItem {
   to: string;
@@ -41,7 +42,7 @@ interface NavItem {
    *  real data at render time — never a hardcoded number. Add a new source
    *  here (and wire its count in AppSidebar's body) only once a real count
    *  exists; an item with no real number gets no badge rather than a fake one. */
-  badgeSource?: 'unreadMessages';
+  badgeSource?: 'unreadMessages' | 'pendingRequests';
 }
 
 const SETTINGS_PERMISSIONS = [
@@ -64,7 +65,7 @@ const SECTIONS: NavSection[] = [
       { to: '/dashboard', label: 'Home', icon: LayoutDashboard },
       { to: '/calendar', label: 'Calendar', icon: Calendar },
       { to: '/clients', label: 'Clients', icon: Users },
-      { to: '/requests', label: 'Requests', icon: Inbox },
+      { to: '/requests', label: 'Requests', icon: Inbox, badgeSource: 'pendingRequests' },
     ],
   },
   {
@@ -133,9 +134,11 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { orgContext, loading: orgContextLoading } = useOrgContext();
   const unreadMessages = useUnreadMessagesCount();
+  const pendingRequests = usePendingRequestsCount();
 
   const badgeCountFor = (item: NavItem): number | null => {
     if (item.badgeSource === 'unreadMessages') return unreadMessages > 0 ? unreadMessages : null;
+    if (item.badgeSource === 'pendingRequests') return pendingRequests > 0 ? pendingRequests : null;
     return null;
   };
 
