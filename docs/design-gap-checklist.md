@@ -129,22 +129,27 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
       not fabrication).
 
 ### Messages / Notifications
-- [ ] **Chat cards (payment/appointment/refund/session-summary) render as raw
-      JSON text** — `MessagesPage.tsx` renders `{m.content}` unconditionally
-      with no `messageType` branch. Full concrete card spec now available (see
-      "Card design spec" below) — this directly affects the F.6 payment card
-      shipped this session.
-- [ ] Thread header missing: "End-to-end encrypted" subtitle, video-call icon
-      button, 3-dot overflow menu.
-- [ ] Composer missing the paperclip/attachment button.
-- [ ] Notification list items are 28px circles, single color regardless of
-      type — design uses 36px rounded-square chips with a distinct color pair
-      per notification type (payment=forest, note=ochre, reminder=lavender,
-      etc.), and groups items by Today/Yesterday (currently a flat list).
-- [ ] **Design note**: the design's real notifications surface is a dedicated
-      full-page tab (not a dropdown) — see the P0 Notifications nav item above.
-      The dropdown itself is a reasonable, functional addition beyond the
-      design; don't remove it, but the full-page version doesn't exist yet.
+- [x] **Chat cards now render as real cards** (`src/components/chat/ChatCard.tsx`,
+      new) instead of raw JSON — payment/appointment/refund/session-summary
+      types get a colored icon chip, title, label/value rows, and a "View in
+      calendar" link; unknown types fall back to the old plain-text render
+      rather than crashing. Fixed 2026-09-19 — this directly affects the F.6
+      payment-requested card shipped earlier this session.
+- [x] Thread header: added the "End-to-end encrypted" line and a video-call
+      icon button (navigates to Telehealth). **Not done**: 3-dot overflow
+      menu — no clear real action to wire it to yet (no block/mute/archive
+      UI exists), left out rather than adding a decorative dead-end menu.
+- [x] Composer: added the paperclip button — shows an honest "coming soon"
+      toast (no attachment upload backend wired for this chat context),
+      matching the same pattern the video-call UI already uses for its own
+      not-yet-built captions toggle.
+- [x] Notification items now use 36px rounded-square chips with a real
+      color pair per type, and group by Today/Yesterday/Earlier — fixed
+      2026-09-19.
+- [ ] **Design note, unchanged**: the design's real notifications surface is
+      a dedicated full-page tab (not a dropdown) — see the P0 Notifications
+      nav item. The dropdown is a reasonable, functional addition beyond the
+      design; the full-page version still doesn't exist.
 
 ### Money (Earnings / Statements / Payouts / Plans)
 - [ ] Statements table has the wrong columns — should be Period/Sessions/Gross/

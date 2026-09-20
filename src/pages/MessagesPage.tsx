@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Search, Send, ShieldAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { Search, Send, ShieldAlert, Video, Paperclip, ShieldCheck } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { initialsOf } from './calendar/calendarConstants';
 import { useMessages } from './messages/useMessages';
 import type { Conversation } from '../api/chat';
+import { ChatCard, isRenderableCard } from '../components/chat/ChatCard';
 
 function threadName(c: Conversation): string {
   return c.participantName || c.clientName || c.therapistName || 'Unknown';
@@ -23,6 +26,7 @@ function formatMessageTime(iso: string): string {
 }
 
 export default function MessagesPage() {
+  const navigate = useNavigate();
   const {
     therapistId,
     conversations,
@@ -130,8 +134,19 @@ export default function MessagesPage() {
                   </span>
                   <div className="flex-1">
                     <div className="text-sm font-semibold text-ink">{threadName(selected)}</div>
-                    <div className="text-[11px] text-muted-text capitalize">{selected.role}</div>
+                    <div className="flex items-center gap-1 text-[11px] text-muted-text">
+                      <ShieldCheck className="h-3 w-3" />
+                      End-to-end encrypted
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/telehealth')}
+                    title="Start a video session"
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-action-light/60 hover:text-action-dark"
+                  >
+                    <Video className="h-4 w-4" />
+                  </button>
                 </div>
 
                 <div className="flex flex-1 flex-col gap-3 overflow-y-auto bg-canvas p-5">
@@ -150,17 +165,28 @@ export default function MessagesPage() {
                     !messagesError &&
                     messages.map((m) => {
                       const mine = therapistId != null && m.senderId === String(therapistId);
+                      const isCard = isRenderableCard(m.messageType);
                       return (
                         <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                          <div
-                            className={`max-w-[64%] rounded-[14px] border px-3.5 py-2.5 text-sm leading-relaxed ${
-                              mine
-                                ? 'border-action bg-action text-white'
-                                : 'border-rule bg-surface text-ink'
-                            } ${m.status === 'failed' ? 'opacity-60' : ''}`}
-                          >
-                            {m.content}
-                          </div>
+                          {isCard ? (
+                            <div className={m.status === 'failed' ? 'opacity-60' : ''}>
+                              <ChatCard
+                                messageType={m.messageType}
+                                content={m.content}
+                                onOpen={(appointmentId) => navigate(`/telehealth/${appointmentId}`)}
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              className={`max-w-[64%] rounded-[14px] border px-3.5 py-2.5 text-sm leading-relaxed ${
+                                mine
+                                  ? 'border-action bg-action text-white'
+                                  : 'border-rule bg-surface text-ink'
+                              } ${m.status === 'failed' ? 'opacity-60' : ''}`}
+                            >
+                              {m.content}
+                            </div>
+                          )}
                           <div className="mt-1 text-[11px] text-[#8E7563]">
                             {m.status === 'sending' ? 'Sending…' : m.status === 'failed' ? 'Failed to send' : formatMessageTime(m.createdAt)}
                           </div>
@@ -178,6 +204,14 @@ export default function MessagesPage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2.5 border-t border-action-light bg-surface px-5 py-3.5">
+                    <button
+                      type="button"
+                      title="Attach a file"
+                      onClick={() => toast.info('Attachments are coming soon')}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-action-light/60 hover:text-action-dark"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </button>
                     <input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
