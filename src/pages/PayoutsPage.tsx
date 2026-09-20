@@ -99,13 +99,11 @@ export default function PayoutsPage() {
 
                 <div className="rounded-[14px] border border-rule bg-surface p-5">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">
-                    Last payout
+                    Paid out · this financial year
                   </div>
-                  <div className="mt-2 text-[26px] font-medium text-ink">
-                    {summary.last_payout_amount_paise != null ? formatPaise(summary.last_payout_amount_paise) : '—'}
-                  </div>
+                  <div className="mt-2 text-[26px] font-medium text-ink">{formatPaise(summary.ytd_net_paise)}</div>
                   <div className="mt-1 text-xs text-[#8E7563]">
-                    {summary.last_payout_date ? formatDate(summary.last_payout_date) : 'No payouts yet'}
+                    {summary.last_payout_date ? `Last: ${formatDate(summary.last_payout_date)}` : 'No payouts yet'}
                   </div>
                 </div>
               </div>

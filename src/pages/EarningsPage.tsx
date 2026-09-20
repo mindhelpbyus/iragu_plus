@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+import { ArrowUpDown } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import {
   Pagination,
@@ -8,8 +10,16 @@ import {
   PaginationPrevious,
 } from '../components/ui/pagination';
 import { formatPaise } from '../lib/money';
-import { useEarnings } from './earnings/useEarnings';
+import { useEarnings, PAGE_SIZE } from './earnings/useEarnings';
 import type { TransactionRow } from '../api/billing';
+
+/** Real effective rate for this cycle (deducted ÷ gross), not a hardcoded assumption — the configured rate can change. */
+function ratePercent(deductedPaise: number, grossPaise: number): string {
+  if (grossPaise <= 0) return '';
+  return ` ${Math.round((deductedPaise / grossPaise) * 100)}%`;
+}
+
+type SortKey = 'date' | 'net';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -25,6 +35,26 @@ function formatPeriod(start: string, end: string): string {
 
 export default function EarningsPage() {
   const { summary, transactions, clientNames, loading, error, page, setPage, totalPages, total } = useEarnings();
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
+
+  // Client-side, current page only — this backend's transactions list has no
+  // server-side sort param.
+  const sortedTransactions = useMemo(() => {
+    const rows = [...transactions];
+    rows.sort((a, b) => {
+      const av = sort.key === 'date' ? new Date(a.occurredAt ?? 0).getTime() : a.netPaise;
+      const bv = sort.key === 'date' ? new Date(b.occurredAt ?? 0).getTime() : b.netPaise;
+      return sort.dir === 'asc' ? av - bv : bv - av;
+    });
+    return rows;
+  }, [transactions, sort]);
+
+  function toggleSort(key: SortKey) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+  }
+
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <>
@@ -77,7 +107,9 @@ export default function EarningsPage() {
                     {formatPaise(summary.current_period_commission_paise + summary.current_period_tds_paise)}
                   </div>
                   <div className="mt-1 text-xs text-muted-text">
-                    Platform fee {formatPaise(summary.current_period_commission_paise)} · TDS{' '}
+                    Platform{ratePercent(summary.current_period_commission_paise, summary.current_period_gross_paise)}{' '}
+                    {formatPaise(summary.current_period_commission_paise)} · TDS
+                    {ratePercent(summary.current_period_tds_paise, summary.current_period_gross_paise)}{' '}
                     {formatPaise(summary.current_period_tds_paise)}
                   </div>
                 </div>
@@ -96,18 +128,22 @@ export default function EarningsPage() {
                   style={{ gridTemplateColumns: '1.4fr 1fr .8fr .9fr .7fr .8fr' }}
                 >
                   <span>Client</span>
-                  <span>Date</span>
+                  <button type="button" onClick={() => toggleSort('date')} className="flex items-center gap-1 text-left hover:text-ink">
+                    Date <ArrowUpDown className="h-3 w-3" />
+                  </button>
                   <span>Gross</span>
                   <span>Platform</span>
                   <span>TDS</span>
-                  <span className="text-right">Your net</span>
+                  <button type="button" onClick={() => toggleSort('net')} className="flex items-center justify-end gap-1 text-right hover:text-ink">
+                    Your net <ArrowUpDown className="h-3 w-3" />
+                  </button>
                 </div>
 
                 {!loading && transactions.length === 0 && (
                   <div className="p-10 text-center text-sm text-muted-text">No session earnings yet.</div>
                 )}
 
-                {transactions.map((tx: TransactionRow) => (
+                {sortedTransactions.map((tx: TransactionRow) => (
                   <div
                     key={tx.id}
                     className="grid items-center gap-3 border-b border-action-light px-5 py-3 text-[13px] text-[#48382E] last:border-b-0"
@@ -125,10 +161,22 @@ export default function EarningsPage() {
                 ))}
 
                 <div className="flex items-center justify-between border-t border-rule bg-canvas px-5 py-3">
-                  <div className="text-xs text-muted-text">{total} total session{total === 1 ? '' : 's'}</div>
+                  <div className="text-xs text-muted-text">
+                    {total === 0 ? 'No sessions' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
+                  </div>
                   {totalPages > 1 && (
                     <Pagination className="mx-0 w-auto justify-end">
                       <PaginationContent>
+                        <PaginationItem>
+                          <button
+                            type="button"
+                            onClick={() => setPage(1)}
+                            disabled={page === 1}
+                            className="h-9 rounded-md px-2.5 text-xs font-medium text-ink hover:bg-action-light/40 disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            First
+                          </button>
+                        </PaginationItem>
                         <PaginationItem>
                           <PaginationPrevious
                             onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -149,6 +197,16 @@ export default function EarningsPage() {
                             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                             className={page === totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
                           />
+                        </PaginationItem>
+                        <PaginationItem>
+                          <button
+                            type="button"
+                            onClick={() => setPage(totalPages)}
+                            disabled={page === totalPages}
+                            className="h-9 rounded-md px-2.5 text-xs font-medium text-ink hover:bg-action-light/40 disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            Last
+                          </button>
                         </PaginationItem>
                       </PaginationContent>
                     </Pagination>

@@ -3,7 +3,7 @@ import { getEarningsSummary, listTransactions, type EarningsSummary, type Transa
 import { getMyAppointments } from '../../api/appointmentsBackend';
 import { getMyTherapistId } from '../../api/therapistMe';
 
-const PAGE_SIZE = 10;
+export const PAGE_SIZE = 10;
 
 export function useEarnings() {
   const [summary, setSummary] = useState<EarningsSummary | null>(null);

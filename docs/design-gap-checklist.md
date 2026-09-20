@@ -152,18 +152,31 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
       design; the full-page version still doesn't exist.
 
 ### Money (Earnings / Statements / Payouts / Plans)
-- [ ] Statements table has the wrong columns — should be Period/Sessions/Gross/
-      Deductions/Net paid/Documents, currently Statement/Issued/Net paid/
-      Status/Document. Missing the 3rd summary card ("Platform fees paid").
-      Only 1 of 2 documents per row (missing the separate GST-invoice
-      download). **No pagination at all.**
-- [ ] Payouts table drops Period and Sessions columns (replaced by a single
-      Date column). "Payout account" card missing its "Change" button. Third
-      summary card shows a different metric (last payout vs. design's
-      cumulative FY total).
-- [ ] Earnings: deductions card/table headers omit the rate percentages ("12%
-      platform fee", "1% TDS"). Column headers aren't clickable sort toggles.
-      Pagination missing First/Last jump buttons and "Showing X–Y of Z" text.
+- [x] Statements — added the 3rd summary card ("Platform fees paid",
+      computed from real `ytd_gross/net/tds` figures, not hardcoded) and
+      widened the grid to 3-up (2026-09-19). **Left unchanged, confirmed via
+      real backend source** (`billing_payment`'s `buildTherapistPayoutStatement`,
+      `finance.controller.js`'s `GET /api/invoices`, and `pgStore.js`'s literal
+      `invoices.list()` SQL): no Period/Sessions/Gross/Deductions columns exist
+      in the list response (only id/type/docNumber/amount/status/dates), and
+      there is no 2nd "GST invoice" document type — the single
+      `therapist_payout_statement` already IS the tax invoice (confirmed by the
+      design's own footer note). No offset/cursor pagination exists either
+      (flat `limit` cap of 500) — not fabricated.
+- [x] Payouts — replaced the 3rd summary card with "Paid out · this financial
+      year" using real `summary.ytd_net_paise`, kept last-payout-date as a
+      secondary line (2026-09-19). Period/Sessions columns and the "Change"
+      button on the Payout account card were **not** added — no destination to
+      change to exists yet (Settings page is still a placeholder) and no
+      period/session breakdown exists in the real payout row shape; adding
+      either would mean fabricating data the backend doesn't return.
+- [x] Earnings — added a real, computed `ratePercent()` helper (deducted ÷
+      gross, not a hardcoded "12%"/"1%") wired into the deductions card
+      caption; made Date and "Your net" column headers clickable sort toggles
+      (client-side, current-page-only — confirmed via `api/billing.ts` that
+      `ListTransactionsFilters` has no server-side `sortBy` param); added
+      "Showing X–Y of Z" text and First/Last pagination jump buttons
+      (2026-09-19).
 
 ## P2 — video session (see also functional gaps in spec-gap-checklist.md)
 

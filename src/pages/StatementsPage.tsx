@@ -65,7 +65,7 @@ export default function StatementsPage() {
           {loading && !summary && <div className="p-10 text-center text-sm text-muted-text">Loading statements…</div>}
 
           {summary && (
-            <div className="mb-5 grid grid-cols-2 gap-5">
+            <div className="mb-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
               <div className="rounded-[14px] border border-[#C8E1CF] bg-gradient-to-br from-action-light to-[#DCEBE0] p-5">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-action-dark">
                   Net earned this financial year
@@ -81,6 +81,15 @@ export default function StatementsPage() {
                 </div>
                 <div className="mt-2 text-[26px] font-medium text-ink">{formatPaise(summary.ytd_tds_deducted_paise)}</div>
                 <div className="mt-1 text-xs text-muted-text">Withheld under §194-O · reflected in Form 26AS</div>
+              </div>
+              <div className="rounded-[14px] border border-rule bg-surface p-5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-text">
+                  Platform fees paid
+                </div>
+                <div className="mt-2 text-[26px] font-medium text-ink">
+                  {formatPaise(Math.max(0, summary.ytd_gross_paise - summary.ytd_net_paise - summary.ytd_tds_deducted_paise))}
+                </div>
+                <div className="mt-1 text-xs text-muted-text">Iragu+'s commission, this financial year</div>
               </div>
             </div>
           )}
