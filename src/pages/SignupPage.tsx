@@ -1,63 +1,55 @@
 /**
  * SignupPage — 6-step therapist registration wizard. Layout/copy match
- * designs/Iragu+ Signup.dc.html exactly (Account → Credentials → Specialties →
- * Services → Profile → Done).
+ * designs/Iragu+ Signup.dc.html (Account → Credentials → Specialties →
+ * Services → Profile → Verify).
  *
  * Step 1 (Account) is wired to real Cognito signup via api/auth.ts `register()`.
  * Steps 2–5 collect therapist-profile data (credentials, specialties, services,
- * bio) that has no backend endpoint yet — this is a `TherapistProfile` row in
- * backend-initial, created after Cognito signup succeeds, not part of Cognito
- * registration itself. Per the plan (ship UI against a minimal endpoint, grow
- * it): the fields are collected and held in local state for now and are NOT
- * yet sent anywhere — see the `finish()` TODO for exactly what's missing.
+ * bio) that STILL has no backend endpoint reachable from mid-wizard — a
+ * `TherapistProfile` row's real writes (`PUT /therapists/{id}/profile`) need a
+ * caller with a valid Cognito Bearer token, and `register()` below only calls
+ * Cognito `signUp`: the account sits in `pending_confirmation` with no
+ * session, and confirming it needs the code Cognito emailed, which this
+ * wizard never collected. Calling the real save mid-wizard would 401.
  *
- * Step 5's profile photo picker (see `handlePhotoChange`) is a REAL file
- * picker + local preview (`URL.createObjectURL`) — but it does NOT upload
- * anywhere yet. backend-initial has a real presigned-upload contract for this
- * exact use (`GET /files/upload-url?context=therapist_photo&filename=&mimeType=`
- * → PUT the bytes → `POST /files` to register the object; see
- * backend-initial/src/lambdas/file-upload/src/handler.ts and
- * shared/storage/document-classes.ts's `therapist_photo` class: image/*, 10 MB
- * cap), but that route requires a caller with a valid Cognito Bearer token.
- * `register()` below only calls Cognito `signUp` — the account sits in
- * `pending_confirmation` with no session/access token, and this wizard never
- * collects the email-confirmation code before reaching step 5. Calling the
- * presign route here would 401 today. Wiring it for real needs either an
- * email-verification step inserted before step 5, or moving photo upload to
- * post-login (e.g. Settings) once a session exists — a product decision
- * outside this fix's scope, so the picker stays local-preview-only rather
- * than faking an upload success.
+ * The fix: steps 2–5 stay local-only collection (unchanged), but `finish()`
+ * now caches that data as a DRAFT (lib/profileDraft.ts — sessionStorage,
+ * cleared on real save, never a second source of truth) and step 6 is a REAL
+ * "confirm your email" screen — Cognito's `signUp` already sent a 6-digit
+ * CODE (not a link; see api/auth.ts's `verifyEmail` doc for how that's known)
+ * — instead of silently pretending the account was fully set up. Confirming
+ * the code, then signing in with the same credentials from step 1, is what
+ * finally produces the Bearer token ProfileCompletionPage
+ * (pages/ProfileCompletionPage.tsx) needs to perform the REAL save this
+ * wizard could never do — closing both the data-loss bug and iragu_plus's
+ * gap vs. therapistApp's `ProfileCompletionPage` (mobile's own post-login
+ * "finish your profile" screen).
+ *
+ * Step 5's profile photo picker is the shared `PhotoPicker`
+ * (components/PhotoPicker.tsx) — same validated control ProfileCompletionPage
+ * uses. It stays local-preview-only HERE (no session exists yet to upload
+ * against); ProfileCompletionPage is what actually uploads it, post-login,
+ * via api/files.ts's real presign → PUT → register flow.
  */
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Camera } from 'lucide-react';
-import { register } from '../api/auth';
+import { register, verifyEmail, resendConfirmationCode, login } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
+import { saveProfileDraft } from '../lib/profileDraft';
+import { PhotoPicker, validatePhotoFile } from '../components/PhotoPicker';
+import { DESIGNATIONS, SPECIALTIES, MODALITIES, LANGUAGES, AGE_GROUPS, SERVICES, WEEKDAYS } from '../lib/therapistVocabulary';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { Checkbox } from '../components/ui/checkbox';
 import iraguPlusMark from '../assets/brand/iragu-plus-mark.svg';
 
-const STEP_NAMES = ['Account', 'Credentials', 'Specialties', 'Services', 'Profile', 'Done'];
+const STEP_NAMES = ['Account', 'Credentials', 'Specialties', 'Services', 'Profile', 'Verify'];
 
-/** Matches backend-initial's `therapist_photo` document class cap exactly
- *  (shared/storage/document-classes.ts) — not an arbitrary UI limit. */
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-
-const DESIGNATIONS = ['Clinical Psychologist', 'Counseling Psychologist', 'Psychiatrist', 'Therapist / Counselor'];
-const SPECIALTIES = ['Anxiety', 'Depression', 'Work stress', 'Trauma/PTSD', 'OCD', 'Couples', 'Grief', 'LGBTQ+', 'Sleep', 'Addiction'];
-const MODALITIES = ['CBT', 'DBT', 'EMDR', 'ACT', 'Psychodynamic', 'Gottman'];
-const LANGUAGES = ['English', 'Hindi', 'Malayalam', 'Tamil', 'Telugu', 'Bengali'];
-const AGE_GROUPS = ['Children', 'Teens', 'Adults', 'Seniors'];
-const SERVICES = [
-  { label: 'Individual therapy · 50min', defaultFee: '2500' },
-  { label: 'Couples therapy · 75min', defaultFee: '3500' },
-  { label: 'Group session · 60min', defaultFee: '800' },
-  { label: 'Intake assessment · 60min', defaultFee: '3000' },
-];
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// Re-exported so existing imports of validatePhotoFile from this module keep
+// compiling — the real implementation now lives with the shared PhotoPicker.
+export { validatePhotoFile };
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -83,28 +75,11 @@ export function toggleIndex(arr: number[], i: number): number[] {
 /**
  * Which of the 6 step-progress segments should render as filled (current or
  * completed) vs. upcoming. Exported so a regression that drops the 6th
- * ("Done") segment — e.g. reintroducing a `.slice(0, 5)` — is caught by a
+ * ("Verify") segment — e.g. reintroducing a `.slice(0, 5)` — is caught by a
  * test rather than only noticed visually. Length is always `STEP_NAMES.length`.
  */
 export function stepSegments(currentStep: number): boolean[] {
   return STEP_NAMES.map((_, i) => i < currentStep);
-}
-
-/**
- * Validates a picked profile-photo file against the exact same constraints
- * backend-initial's `therapist_photo` document class enforces server-side
- * (image/* mime, <=10MB — see shared/storage/document-classes.ts). Returns an
- * error message to show the user, or null if the file is acceptable.
- * Exported so the check can be unit-tested without a DOM file input.
- */
-export function validatePhotoFile(file: { type: string; size: number }): string | null {
-  if (!file.type.startsWith('image/')) {
-    return 'Please choose an image file (JPG, PNG, etc.)';
-  }
-  if (file.size > MAX_PHOTO_BYTES) {
-    return 'Photo must be under 10 MB';
-  }
-  return null;
 }
 
 export interface ProfilePreview {
@@ -181,8 +156,8 @@ export default function SignupPage() {
   const [displayName, setDisplayName] = useState('');
   const [headline, setHeadline] = useState('');
 
-  // Step 5 — profile photo (real file picker + local preview; see file header
-  // for why this doesn't upload to backend-initial yet).
+  // Step 5 — profile photo (real file picker + local preview via the shared
+  // PhotoPicker; see file header for why this doesn't upload here).
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
 
@@ -194,21 +169,18 @@ export default function SignupPage() {
     };
   }, [photoPreviewUrl]);
 
-  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const error = validatePhotoFile(file);
-    if (error) {
-      toast.error(error);
-      e.target.value = '';
-      return;
-    }
+  const handlePhotoSelected = (file: File) => {
     setPhotoFile(file);
     setPhotoPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
   };
+
+  // Step 6 — confirm-email (real Cognito confirmation; see file header)
+  const [confirmCode, setConfirmCode] = useState('');
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const handleAccountSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -232,16 +204,58 @@ export default function SignupPage() {
     }
   };
 
+  /**
+   * Cache the collected profile data as a DRAFT (never a save — no session
+   * exists to save against yet) and move to the real confirm-email step.
+   * `photoFile` is deliberately NOT cached (see lib/profileDraft.ts's file
+   * header) — ProfileCompletionPage re-prompts for it once a session exists.
+   */
   const finish = () => {
-    // TODO(backend): POST the collected profile (desig/specs/modalities/langs/
-    // ages/services/availDays/bio) to backend-initial once a
-    // create-therapist-profile endpoint exists. Not sent today.
-    //
-    // TODO(backend): `photoFile` (the picked File — see handlePhotoChange) is
-    // also not sent. Uploading it needs a Cognito session, which does not
-    // exist yet at this point in the wizard — see the file header comment for
-    // the exact route contract and why it can't be wired here honestly today.
+    saveProfileDraft({
+      designation: DESIGNATIONS[desig] ?? null,
+      specialties: specs.map((i) => SPECIALTIES[i]).filter((v): v is string => Boolean(v)),
+      modalities: modalities.map((i) => MODALITIES[i]).filter((v): v is string => Boolean(v)),
+      languages: langs.map((i) => LANGUAGES[i]).filter((v): v is string => Boolean(v)),
+      serviceFeeRupees: services.length > 0 ? SERVICES[services[0]].defaultFee : null,
+      bio,
+    });
     setStep(6);
+  };
+
+  /**
+   * Confirm the Cognito account with the code the user typed, then sign in
+   * with the same credentials step 1 already collected — `confirmRegistration`
+   * only moves the account UNCONFIRMED -> CONFIRMED, it does not itself
+   * establish a session. This is the step that finally produces a real
+   * Bearer token, which is what lets ProfileCompletionPage perform the save
+   * this wizard never could.
+   */
+  const handleConfirmSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsConfirming(true);
+    try {
+      await verifyEmail(email, confirmCode.trim());
+      const user = await login(email, password);
+      setUser(user);
+      toast.success('Account confirmed — let’s finish your profile');
+      navigate('/complete-profile');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not confirm your account');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setIsResending(true);
+    try {
+      await resendConfirmationCode(email);
+      toast.success('Confirmation code resent — check your email');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not resend the code');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   // Step 5 "Preview — how clients see you" — see buildProfilePreview's doc
@@ -480,26 +494,7 @@ export default function SignupPage() {
             </p>
             <div className="flex flex-col gap-5 rounded-2xl border border-rule bg-surface p-6">
               <div className="flex items-center gap-5">
-                <label
-                  htmlFor="profile-photo-input"
-                  className="group flex h-[88px] w-[88px] shrink-0 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-full border-[1.5px] border-dashed border-rule-hi bg-canvas transition-colors hover:border-action hover:bg-action-light/40"
-                >
-                  {photoPreviewUrl ? (
-                    <img src={photoPreviewUrl} alt="Profile preview" className="h-full w-full object-cover" />
-                  ) : (
-                    <>
-                      <Camera className="h-5 w-5 text-muted-text transition-colors group-hover:text-action-dark" strokeWidth={1.75} />
-                      <span className="mt-1 text-[10px] text-muted-text">Add photo</span>
-                    </>
-                  )}
-                  <input
-                    id="profile-photo-input"
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                  />
-                </label>
+                <PhotoPicker previewUrl={photoPreviewUrl} onFileSelected={handlePhotoSelected} />
                 <div className="text-xs leading-relaxed text-muted-text">
                   <b className="text-ink">Photo guidelines</b>
                   <br />
@@ -579,34 +574,42 @@ export default function SignupPage() {
         )}
 
         {step === 6 && (
-          <div className="py-10 text-center">
+          <form onSubmit={handleConfirmSubmit} className="py-10 text-center">
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-action-light">
               <div className="h-8 w-8 rounded-full bg-action" />
             </div>
-            <h1 className="text-2xl font-medium tracking-tight text-ink">You're in</h1>
+            <h1 className="text-2xl font-medium tracking-tight text-ink">Check your email</h1>
             <p className="mx-auto mt-2 max-w-sm text-sm text-muted-text">
-              Your account is ready. We're reviewing your credentials — you can explore your dashboard while you
-              wait.
+              We sent a 6-digit confirmation code to <b className="text-ink">{email || 'your email'}</b>. Enter it
+              below to confirm your account — your profile details are saved and waiting for you on the next step.
             </p>
-            <div className="mx-auto mt-6 flex max-w-xs flex-col gap-2 text-left">
-              {[
-                { label: 'Account created', done: true },
-                { label: 'RCI credentials in review', done: false },
-                { label: 'Add a profile photo', done: false },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center gap-2.5 rounded-[10px] border border-rule bg-surface px-3.5 py-2.5">
-                  <div
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: row.done ? 'var(--action)' : 'var(--dim)' }}
-                  />
-                  <span className="text-[13px] text-ink">{row.label}</span>
-                </div>
-              ))}
+            <div className="mx-auto mt-6 max-w-xs text-left">
+              <FieldLabel>Confirmation code</FieldLabel>
+              <Input
+                value={confirmCode}
+                onChange={(e) => setConfirmCode(e.target.value)}
+                placeholder="123456"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                className="text-center text-lg tracking-[0.3em]"
+              />
             </div>
-            <Button onClick={() => navigate('/dashboard')} className="mt-7 h-11 rounded-2xl px-6">
-              Explore your dashboard
+            <Button type="submit" disabled={isConfirming || !confirmCode.trim()} className="mt-6 h-11 rounded-2xl px-6">
+              {isConfirming ? 'Confirming…' : 'Confirm & continue'}
             </Button>
-          </div>
+            <div className="mt-4 text-xs text-muted-text">
+              Didn't get a code?{' '}
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={isResending}
+                className="font-medium text-action-dark hover:underline disabled:opacity-50"
+              >
+                {isResending ? 'Resending…' : 'Resend code'}
+              </button>
+            </div>
+          </form>
         )}
       </div>
     </div>

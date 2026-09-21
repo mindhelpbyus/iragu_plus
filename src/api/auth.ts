@@ -20,6 +20,7 @@ import {
   changePassword,
   userPool,
   newCognitoUser,
+  resendSignUpConfirmationCode,
   type SignInResult,
 } from '../lib/cognito';
 import {
@@ -285,12 +286,27 @@ export async function register(data: RegisterRequest): Promise<AuthUser> {
   });
 }
 
-/** Confirm a new account with the code Cognito emailed. */
+/**
+ * Confirm a new account with the code Cognito emailed.
+ *
+ * The pool's `UserPool` CDK construct (backend-initial's
+ * `infrastructure/lib/auth-stack.ts`) never sets `userVerification.emailStyle`,
+ * so it takes the CDK default: `VerificationEmailStyle.CODE` (a 6-digit code
+ * the user types in), not a clickable LINK — confirmed by this SDK call
+ * itself, too: `confirmRegistration` always takes a manually-entered code,
+ * amazon-cognito-identity-js has no link-based confirmation method at all.
+ */
 export async function verifyEmail(email: string, code: string): Promise<void> {
   const user = newCognitoUser(email);
   return new Promise((resolve, reject) => {
     user.confirmRegistration(code, true, (err) => (err ? reject(err) : resolve()));
   });
+}
+
+/** Resend the sign-up confirmation code — SignupPage's confirm-email step
+ *  needs this for a code that expired or never arrived. */
+export async function resendConfirmationCode(email: string): Promise<void> {
+  return resendSignUpConfirmationCode(email);
 }
 
 /** Sign out of Cognito (clears local tokens). */
@@ -339,6 +355,7 @@ export const RealAuthService = {
   register,
   getCurrentUser,
   verifyEmail,
+  resendConfirmationCode,
   forgotPassword,
   resetPassword,
   setupMFA,

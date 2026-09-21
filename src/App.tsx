@@ -13,15 +13,23 @@
  */
 
 import { useEffect, useCallback, useRef, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import { logger } from './utils/secureLogger';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuthStore } from './store/authStore';
 import { AppLayout } from './components/layout/AppLayout';
+import { getMyTherapistProfile } from './api/therapistProfile';
+import { isProfileComplete, therapistMeToCompletenessInput } from './lib/profileCompleteness';
+import {
+  PROFILE_COMPLETION_NUDGE_KEY,
+  isEligibleForProfileCompletionNudge,
+  shouldRedirectToProfileCompletion,
+} from './lib/profileCompletionGate';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage'));
+const ProfileCompletionPage = lazy(() => import('./pages/ProfileCompletionPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const ClientsPage = lazy(() => import('./pages/ClientsPage'));
@@ -90,6 +98,8 @@ export default function App() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const refreshUser = useAuthStore((s) => s.refreshUser);
   const storeLogout = useAuthStore((s) => s.logout);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     refreshUser();
@@ -112,6 +122,49 @@ export default function App() {
       });
     }
   });
+
+  // Profile-completion gate — SOFT nudge, not a hard block. Runs at most
+  // once per browser session, right after `refreshUser()` resolves a real
+  // therapist (mirroring the "check once, right after auth resolves" shape
+  // RequireAuth's own wrong-role check already uses below — but without that
+  // check's every-render repetition, which would turn this into the hard
+  // gate lib/profileCompletionGate.ts's header explains therapistApp's own
+  // mobile equivalent deliberately is NOT). See that file for the full
+  // reasoning and exactly which paths are excluded.
+  useEffect(() => {
+    if (isLoading || !user || user.role !== 'therapist') return;
+    if (sessionStorage.getItem(PROFILE_COMPLETION_NUDGE_KEY)) return;
+    if (!isEligibleForProfileCompletionNudge(location.pathname)) return;
+
+    let cancelled = false;
+    (async () => {
+      // Fail OPEN — a network/lookup failure must never trap a therapist on
+      // this check; worst case they simply aren't nudged this session.
+      let complete = true;
+      try {
+        const profile = await getMyTherapistProfile();
+        complete = isProfileComplete(therapistMeToCompletenessInput(profile));
+      } catch {
+        complete = true;
+      }
+      if (cancelled) return;
+      sessionStorage.setItem(PROFILE_COMPLETION_NUDGE_KEY, '1');
+      if (
+        shouldRedirectToProfileCompletion({
+          role: user.role,
+          pathname: location.pathname,
+          alreadyActedThisSession: false,
+          isComplete: complete,
+        })
+      ) {
+        navigate('/complete-profile');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, user, location.pathname]);
 
   if (isLoading) return <PageSpinner />;
 
@@ -186,6 +239,18 @@ export default function App() {
               }
             >
               <Route path="/dashboard" element={<DashboardPage />} />
+              {/*
+                A soft-nudge landing spot (see the profile-completion gate
+                effect above + lib/profileCompletionGate.ts), NOT a hard
+                block — reachable directly like any other route, and nothing
+                stops a therapist navigating away from it to any route below
+                before finishing. Inside RequireAuth/AppLayout deliberately,
+                same as /settings, so the full nav shell stays visible and
+                the rest of the app stays reachable — matching therapistApp's
+                own ProfileCompletionPage, a normal named route with a plain
+                back button, not a takeover screen.
+              */}
+              <Route path="/complete-profile" element={<ProfileCompletionPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/clients/:clientId" element={<ClientDetailPage />} />

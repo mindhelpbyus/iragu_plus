@@ -366,6 +366,15 @@ export function phoneConfirm(phoneNumber: string, code: string): Promise<void> {
   });
 }
 
+/** Resend the sign-up confirmation code (Cognito `resendConfirmationCode`) —
+ *  the SignupPage confirm-email step's "Resend code" action. */
+export function resendSignUpConfirmationCode(email: string): Promise<void> {
+  const user = newCognitoUser(email);
+  return new Promise((resolve, reject) => {
+    user.resendConfirmationCode((err) => (err ? reject(err) : resolve()));
+  });
+}
+
 /** Sign in with phone number + password (SRP). */
 export function phoneSignIn(phoneNumber: string, password: string): Promise<CognitoTokens> {
   const user = newCognitoUser(phoneNumber);
