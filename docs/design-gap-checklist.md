@@ -229,16 +229,38 @@ implemented) — every gap below is a missing structural element, not a wrong va
 
 ## P3 — Login / Signup
 
-- [ ] **Signup step 5 (final profile) is missing the photo-upload UI entirely**
-      — no avatar circle, no "Photo guidelines" copy.
-- [ ] Signup step 5's preview card is restructured into a persistent 260px
-      sidebar instead of a full-width card under the form, and drops the
-      avatar/headline/fee line the design shows.
-- [ ] Signup step 4 uses a native OS checkbox instead of the app's custom
-      18px rounded checkbox — will look inconsistent across browsers and
-      clash with every other custom-styled input on the page.
-- [ ] Signup progress bar shows 5 segments instead of the design's 6 (missing
-      the "Done" step segment).
+- [x] **Signup step 5 photo-upload UI — built 2026-09-20.** Real 88px dashed
+      avatar circle (Camera icon + "Add photo", matching the design's hover/
+      colors) + "Photo guidelines" copy, wired to a real file picker with
+      local preview (`URL.createObjectURL`, revoked on replace/unmount) and
+      real client-side validation (`validatePhotoFile`: image/* mime, 10 MB
+      cap — the exact same limits as backend-initial's `therapist_photo`
+      document class). **Does not upload anywhere yet, and says so in code**:
+      backend-initial's real presign contract (`GET /files/upload-url` →
+      PUT → `POST /files`, see `file-upload` lambda) requires a Cognito
+      Bearer token, but this wizard's step 1 only calls Cognito `signUp`
+      (account stays `pending_confirmation`, no session) and never collects
+      an email-confirmation code before step 5 — wiring the real upload call
+      here would 401. Needs either an email-verification step added before
+      step 5, or moving photo upload to post-login (e.g. Settings) — a
+      product decision, flagged in `SignupPage.tsx`'s file header rather than
+      faked.
+- [x] Signup step 5's preview — rebuilt 2026-09-20 as a full-width card under
+      the form (not a persistent 260px sidebar), with the avatar circle
+      (real photo or initials), headline, real selected-languages line, and a
+      fee line sourced from the first selected service's real configured fee
+      (`SERVICES`/`services` state) — never a hardcoded number. Two design
+      mock values were deliberately NOT reproduced since nothing in the
+      wizard holds real state for them: years-of-practice (uncontrolled input,
+      no state) and the design's fixed "₹2,500"/"12 yrs" example text.
+- [x] Signup step 4 — swapped the native `<input type="checkbox">` for the
+      app's real `Checkbox` primitive (`src/components/ui/checkbox.tsx`,
+      Radix-based), sized to the design's 18px/5px-radius treatment. Colors
+      come from the component's existing `--interaction-*`/`--action-primary-*`
+      tokens (already defined in `globals.css`), not new hardcoded hex.
+- [x] Signup progress bar — now renders all 6 segments (`stepSegments()`,
+      `STEP_NAMES.length`), fixing the dropped "Done" segment. Regression-
+      guarded in `SignupPage.test.ts`.
 - [ ] Signup step 6's status checklist loses its icon distinction (check/clock/
       empty-circle) and ochre "in-progress" color, reduced to plain dots.
 - [ ] Several copy strings paraphrased rather than verbatim across steps 3–5
