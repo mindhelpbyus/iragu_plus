@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Video, Copy, Check, Camera, Wifi, ShieldQuestion } from 'lucide-react';
+import { Video, Copy, Check, Camera, Wifi, ShieldQuestion, Home } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { useMyAppointments } from '../../pages/calendar/useMyAppointments';
-import { createRoom, createGuestLink } from '../../api/videoService';
+import { createRoom, createGuestLink, getOrCreateTherapistPersonalRoom } from '../../api/videoService';
 import { useConnectionReadiness } from './useConnectionReadiness';
+import { useAuthStore } from '../../store/authStore';
 import type { RawAppointment } from '../../api/appointmentsBackend';
 
 function initialsOf(name: string): string {
@@ -46,6 +47,8 @@ function formatTimeRange(startIso: string, endIso: string): string {
  */
 export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointmentId: number) => void }) {
   const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
+  const isTherapist = currentUser?.role === 'therapist';
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();
@@ -61,6 +64,7 @@ export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointme
 
   const [startingInstant, setStartingInstant] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [startingPersonal, setStartingPersonal] = useState(false);
   const readiness = useConnectionReadiness();
 
   const startInstantRoom = async () => {
@@ -94,6 +98,27 @@ export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointme
       toast.error(err instanceof Error ? err.message : 'Failed to create a shareable link');
     } finally {
       setStartingInstant(false);
+    }
+  };
+
+  /**
+   * Your own persistent room — not an ad-hoc one. Same room every time
+   * (video-service creates it once and returns it on every later call), so
+   * clients you've shared the link with before can rejoin the same place.
+   * Entering it reuses InstantRoomPage/the generic joinRoom exactly like the
+   * instant-room buttons above — see getOrCreateTherapistPersonalRoom's own
+   * comment (api/videoService.ts) for why that's safe here.
+   */
+  const startPersonalRoom = async () => {
+    if (!currentUser?.id) return;
+    setStartingPersonal(true);
+    try {
+      const room = await getOrCreateTherapistPersonalRoom(currentUser.id);
+      navigate(`/telehealth/room/${room.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to open your personal room');
+    } finally {
+      setStartingPersonal(false);
     }
   };
 
@@ -192,6 +217,12 @@ export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointme
                   {copiedLink ? <Check className="mr-1.5 h-3.5 w-3.5" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
                   {copiedLink ? 'Link copied' : 'Start and copy link'}
                 </Button>
+                {isTherapist && (
+                  <Button variant="outline" size="sm" onClick={startPersonalRoom} disabled={startingPersonal} className="h-[34px] rounded-xl text-xs">
+                    <Home className="mr-1.5 h-3.5 w-3.5" />
+                    Start my personal room
+                  </Button>
+                )}
               </div>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { joinCredentialsSchema } from './videoService';
+import { z } from 'zod';
+import { joinCredentialsSchema, roomSchema } from './videoService';
 
 // video-service's real JoinCredentials shape (src/domain/types.ts / callProvider.ts),
 // as returned by POST /api/appointments/{id}/join — asserted here so a real
@@ -60,5 +61,55 @@ describe('joinCredentialsSchema', () => {
     const { serverUrl: _serverUrl, token: _t, ...rest } = REAL_LIVEKIT_JOIN_RESPONSE;
     const result = joinCredentialsSchema.safeParse({ ...rest, provider: 'google_meet', token: '' });
     expect(result.success).toBe(true);
+  });
+});
+
+// video-service's real Room shape (src/domain/types.ts) for a therapist's
+// personal room, as returned by GET /api/therapists/{therapistId}/personal-room
+// (getOrCreateTherapistPersonalRoom in videoService.ts, backed by
+// video-service's VideoService.getOrCreateTherapistPersonalRoom,
+// src/services/videoService.ts:565-586). Room carries many more fields than
+// roomSchema declares (orgId, ownerUserId, consent, banner, features, ...) —
+// roomSchema intentionally asserts only the subset any current caller
+// actually reads (id, provider, type, roomName, title, status), so this
+// test's real job is confirming those still parse out of a REAL full Room
+// payload without the extra fields tripping zod, and that a real backend
+// contract change (a field getOrCreateTherapistPersonalRoom depends on going
+// missing) fails loudly instead of silently.
+const REAL_PERSONAL_ROOM_RESPONSE = {
+  room: {
+    id: 'room_personal_42',
+    orgId: 'default',
+    provider: 'livekit',
+    type: 'therapist_personal_room',
+    roomName: 'therapist_personal_room_org_default_therapist_42',
+    title: 'Therapist Personal Room',
+    ownerUserId: 'cognito-sub-therapist-42',
+    therapistId: 'cognito-sub-therapist-42',
+    status: 'waiting',
+    features: { audio: true, video: true, chat: true },
+    defaultLanguage: 'auto',
+    banner: { type: 'waiting', message: 'Personal room is open. Please wait for the therapist to admit you.' },
+    consent: { transcript: false, recording: false },
+    createdAt: '2026-08-27T10:00:00.000Z',
+  },
+};
+
+describe('roomSchema (GET /therapists/{id}/personal-room)', () => {
+  it('accepts a real therapist personal room response', () => {
+    const result = z.object({ room: roomSchema }).safeParse(REAL_PERSONAL_ROOM_RESPONSE);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a response missing roomName — getOrCreateTherapistPersonalRoom reads it directly off the parsed result', () => {
+    const { roomName: _roomName, ...withoutRoomName } = REAL_PERSONAL_ROOM_RESPONSE.room;
+    const result = z.object({ room: roomSchema }).safeParse({ room: withoutRoomName });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a response missing id — getOrCreateTherapistPersonalRoom reads it directly off the parsed result', () => {
+    const { id: _id, ...withoutId } = REAL_PERSONAL_ROOM_RESPONSE.room;
+    const result = z.object({ room: roomSchema }).safeParse({ room: withoutId });
+    expect(result.success).toBe(false);
   });
 });

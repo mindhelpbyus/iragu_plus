@@ -88,7 +88,7 @@ export function joinAppointmentRoom(
   });
 }
 
-const roomSchema = z.object({
+export const roomSchema = z.object({
   id: z.string(),
   provider: z.string(),
   type: z.string(),
@@ -109,6 +109,36 @@ export function createRoom(type: RoomType, title: string): Promise<{ id: string;
   return apiFetch('/api/rooms', {
     method: 'POST',
     body: { type, title, provider: 'livekit' },
+    schema: z.object({ room: roomSchema }),
+    rawEnvelope: true,
+    baseUrl: VIDEO_API_BASE_URL,
+    headers: CLIENT_PLATFORM_HEADERS,
+  }).then((res) => ({ id: res.room.id, roomName: res.room.roomName }));
+}
+
+/**
+ * getOrCreateTherapistPersonalRoom — GET /api/therapists/{therapistId}/personal-room
+ * (video-service src/routes/videoRoutes.ts, backing VideoService.
+ * getOrCreateTherapistPersonalRoom, src/services/videoService.ts:565-586).
+ * Therapist (self) or admin/staff only server-side: opens the caller's own
+ * persistent, always-there room — created on first call, the same room
+ * returned on every later call (never a fresh ad-hoc room like createRoom
+ * above).
+ *
+ * Deliberately reuses the generic joinRoom() below to actually enter the
+ * call, rather than the dedicated POST .../personal-room/join route: that
+ * route's only real job beyond joinRoom is verifying a CLIENT's care
+ * relationship with the therapist (video-service's joinTherapistPersonalRoom,
+ * videoService.ts:696-740) before granting access — irrelevant here, since
+ * the therapist calling this is always the room's own ownerUserId/therapistId
+ * and therefore already passes canAccessRoom (src/security/accessControl.ts)
+ * via the plain room-join path. This keeps the therapist's own "start my
+ * personal room" flow on the exact same InstantRoomPage/joinRoom path the
+ * instant-call flow already uses instead of a parallel one.
+ */
+export function getOrCreateTherapistPersonalRoom(therapistId: string): Promise<{ id: string; roomName: string }> {
+  return apiFetch(`/api/therapists/${therapistId}/personal-room`, {
+    method: 'GET',
     schema: z.object({ room: roomSchema }),
     rawEnvelope: true,
     baseUrl: VIDEO_API_BASE_URL,
