@@ -1,0 +1,63 @@
+name: PR Check
+
+# This repo had no CI at all before this workflow (added 2026-09-21). Runs on
+# both push and PR to main — unlike backend-initial's pr-check.yml (which
+# deliberately does NOT run on push because deploy.yml already gates that
+# path), this repo has no separate deploy workflow yet, so push-to-main is
+# the only path most work actually takes. A check that doesn't run on that
+# path isn't a check — see backend-initial/.github/workflows/pr-check.yml's
+# own comment on exactly this mistake.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pr-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # BLOCKING — this repo's tsconfig runs strict + noUnusedLocals/Params,
+      # and typecheck already passes today; a regression here is real.
+      - name: Type check
+        run: npm run typecheck
+
+      # BLOCKING — vite build must keep succeeding; catches anything
+      # typecheck alone wouldn't (e.g. a bad dynamic import path).
+      - name: Build
+        run: npm run build
+
+      # BLOCKING — the existing vitest suite passes today; keep it green.
+      - name: Test
+        run: npm test
+
+      # REPORT-ONLY — no coverageThreshold is configured anywhere in this
+      # repo yet (unlike backend-initial's ratcheting jest.config.js
+      # threshold). Don't invent one here; this step just prints the numbers
+      # for visibility until a real floor is deliberately set.
+      - name: Test coverage (report-only)
+        continue-on-error: true
+        run: npm run test:coverage
