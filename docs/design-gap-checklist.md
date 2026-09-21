@@ -12,16 +12,59 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
 
 ## P0 — empty pages (biggest driver of "half cooked")
 
-- [ ] **Settings** — full 5-panel build spec ready (Profile & security, Calendar &
-      availability, Services, Notification preferences, Payment & compliance).
-      240px nav + card shell, `App.tsx` routes already exist. Must wire a real
-      permission gate on the route (currently `SettingsPage.test.ts` deliberately
-      guards against zero API calls / zero permission checks) — existing
-      `SETTINGS_PERMISSIONS` in `AppSidebar.tsx` don't map cleanly to the design's
-      5 panel ids, needs reconciling.
-- [ ] **Support** — full build spec ready (3 category tiles, new-ticket form,
-      ticket list with status pills). Design is minimal and fully specified —
-      no invented content needed.
+- [x] **Settings — built 2026-09-20.** 240px nav + card shell, 5 tabs matching the
+      design's ids. Real backend wired per tab (`src/pages/settings/`):
+      - **Account** — name/phone via real `PUT /therapists/me`; password change
+        and TOTP 2FA via `changeUserPassword`/`setupMFA`/`verifyMFA`/`disableMFA`
+        in `api/auth.ts` (real Cognito calls that had **zero UI call sites**
+        anywhere in the app before this page — first real caller). Email, title
+        and RCI/license number are read-only (no route writes `title`; license
+        fields freeze once verified — `shared/credential-lock.ts`).
+      - **Availability** — buffer-before/after minutes real via
+        `PUT /therapists/{id}/profile`. Weekly working-hours grid and Google/
+        Outlook calendar sync are explicit in-page gap notices, not fake toggles
+        — no route writes `weeklySchedule`, and no calendar-sync Lambda exists
+        anywhere in backend-initial.
+      - **Services** — single default session fee + session format (online/
+        in-person/both) real via the same profile PUT. The design's per-service
+        catalog (individual/couples/group, each with its own duration+fee) is a
+        gap notice: the `consultation-services` Lambda is stale dist-only build
+        output with no `src/` and no API Gateway route, and
+        `TherapistServicesService` (the helper that would back a catalog) is
+        never called from any handler — confirmed by grep, zero call sites.
+      - **Notification preferences** — real `GET/PUT /users/me/notification-
+        preferences` (role-agnostic route in the `clients` Lambda). Deliberate
+        deviation from the mock: the real stored shape is push/sound/vibration
+        toggles, not the design's 5 fictional categories (new requests/messages/
+        payouts/missed check-ins/product updates) — no table backs those.
+      - **Payment & compliance** — read-only: RCI verification status from the
+        same profile GET, payout-account status reusing `api/billing.ts`'s
+        existing `getBankDetails()` (same call PayoutsPage already makes) with a
+        link to Payouts to manage it. HIPAA/DPDP training completion is an
+        explicit gap notice — nothing tracks it.
+      **Real permission gate**: none of these 5 tabs needed one — each is the
+      caller's own data (see `SettingsPage.tsx`'s module doc and the updated
+      `App.tsx` route comment). `SETTINGS_PERMISSIONS`' org-admin sub-features
+      (team_members/payroll/online_payments/plan_info/demo_client) are a
+      **separate, still-unbuilt** set of tabs this design mock doesn't show.
+      **Security finding (not fixed here)**: `PUT /therapists/{id}/profile`
+      (backend-initial) has **no caller-identity check at all** — every other
+      mutating route in that handler file calls `resolveCaller`/`assertSelf`,
+      this one does not, so any authenticated caller can edit any therapist's
+      profile by numeric id today. This frontend only ever sends the caller's
+      own id, which is correct usage, but the hole itself needs a backend fix.
+- [x] **Support — built 2026-09-20.** 3 real category tiles + a real `mailto:`
+      contact card, using `support@iragu.com` (the same address backend-initial's
+      own transactional emails already point therapists to). **Deliberate
+      deviation from the design mock**: no new-ticket form, no ticket list with
+      status pills. A real ticketing backend exists (`Ticket`/`TicketMessage`
+      Prisma models) but is owned by `backend_support_api`, a standalone peer
+      service not checked out in this workspace with no base URL configured
+      anywhere in iragu_plus — building a form against it would either silently
+      fail or need a fabricated success toast. Same call the client-side sibling
+      app made for its own Help & Support page (`backend-initial/docs/specs/
+      iragu-client-web-app/requirements.md` row 11: "Static content, no backend
+      required for MVP").
 - [x] **Notes — built 2026-09-19.** Two-column list+SOAP-detail page,
       real `listTherapistNotes`/`updateClinicalNote`/`signClinicalNote` API
       client added (`src/api/clinicalNotes.ts`), autosave-on-blur per SOAP

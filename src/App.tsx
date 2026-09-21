@@ -205,14 +205,20 @@ export default function App() {
                   clients. AppSidebar hides the nav link unless the caller
                   holds one of the real settings:* permissions (GET
                   /me/org-context), but a therapist who navigates here
-                  directly is not blocked by the router itself. Verified
-                  2026-08-30: SettingsPage is currently a placeholder with no
-                  API calls, so there is no live data-exposure risk today —
-                  but when a real sub-feature (payroll, team members, etc.)
-                  is built here, IT must check the caller's specific
-                  settings:<x> permission before calling its backend
-                  endpoint (via useOrgContext's hasPermission), not rely on
-                  this route or the sidebar for enforcement. */}
+                  directly is not blocked by the router itself.
+                  Updated (Settings built out): SettingsPage now has a real
+                  API surface — Account/Availability/Services/Notification-
+                  preferences/Compliance (see src/pages/settings/). None of
+                  those five needed a permission gate: each is the caller's
+                  OWN data (any therapist may read/edit their own profile
+                  regardless of org role), and Compliance is read-only. The
+                  settings:* permissions in AppSidebar (team_members/payroll/
+                  online_payments/plan_info/demo_client) map to org-admin
+                  sub-features that are NOT among these five and are not
+                  built yet — when one of THOSE is built, it must check the
+                  caller's specific settings:<x> permission (via
+                  useOrgContext's hasPermission) before calling its backend,
+                  same as this comment always said. */}
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/settings/:section" element={<SettingsPage />} />
               <Route path="/support" element={<SupportPage />} />

@@ -1,51 +1,47 @@
 /**
- * SettingsPage — /settings and /settings/:section have no route-level
- * permission gate (App.tsx: RequireAuth only excludes the client role).
- * AppSidebar hides the nav link unless the caller holds a real settings:*
- * permission (see AppSidebar.test.ts), but that's nav-visibility, not
- * authorization — a therapist navigating here directly is not blocked by
- * the router.
+ * SettingsPage now has a real API surface (see ./settings/ for the per-tab
+ * hooks and their backend evidence) — the previous version of this file
+ * deliberately guarded against that NOT happening, pinning the placeholder
+ * state until permission enforcement was consciously added alongside real
+ * content. That comment's own condition ("when a real sub-feature is built
+ * here, it must check the caller's specific settings:<x> permission") does
+ * not apply to the five tabs built now: Account/Availability/Services/
+ * Notification-preferences/Compliance are all the caller's OWN data (any
+ * therapist may read/edit their own profile regardless of org role) — see
+ * SettingsPage.tsx's module doc for the full reasoning, and App.tsx's route
+ * comment (updated alongside this file) for why no route-level or
+ * `useOrgContext` gate was added for these specific tabs.
  *
- * Found during a route-inventory pass, 2026-08-30: verified there is no
- * live data-exposure risk today because SettingsPage is currently a
- * placeholder with zero API calls and zero permission-gated content (see
- * App.tsx's route comment for the full writeup). This test pins that fact
- * down as a source-content guard, not a render test — this repo has no
- * DOM-testing environment configured yet (jsdom is installed but unwired;
- * every existing *.test.ts file is pure-logic, no @testing-library render
- * calls anywhere), and standing one up is a repo-wide decision bigger than
- * this one page warrants. If SettingsPage.tsx later grows a real fetch
- * call or imports something API-calling, this test breaks, forcing whoever
- * adds it to consciously add permission enforcement (via useOrgContext's
- * hasPermission) at that point rather than silently relying on nav-hiding
- * alone — same intent a render-based test would serve, without requiring
- * this repo to adopt a DOM environment just to prove it.
+ * What's left to test without a DOM environment (this repo has none — see
+ * that removed comment) is the page's pure routing logic: which :section
+ * values are recognised and what an invalid one falls back to.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { resolveSettingsTab, SETTINGS_TABS } from './SettingsPage';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(join(__dirname, 'SettingsPage.tsx'), 'utf8');
+describe('SETTINGS_TABS', () => {
+  it('has exactly the 5 real tabs, no more, no less', () => {
+    expect(SETTINGS_TABS.map((t) => t.id)).toEqual([
+      'account',
+      'availability',
+      'services',
+      'notifications-settings',
+      'insurance',
+    ]);
+  });
+});
 
-describe('SettingsPage.tsx — placeholder, zero API surface (regression guard for the unauthorized-nav-access gap)', () => {
-  it('does not call fetch, apiRequest, or apiFetch anywhere in its source', () => {
-    expect(source).not.toMatch(/\bfetch\s*\(/);
-    expect(source).not.toMatch(/\bapiRequest\s*\(/);
-    expect(source).not.toMatch(/\bapiFetch\s*\(/);
+describe('resolveSettingsTab', () => {
+  it('resolves a known section id to itself', () => {
+    expect(resolveSettingsTab('services')).toBe('services');
+    expect(resolveSettingsTab('insurance')).toBe('insurance');
   });
 
-  it('does not import from the api/ client layer at all', () => {
-    expect(source).not.toMatch(/from\s+['"]\.\.\/api\//);
+  it('falls back to "account" for an unknown section', () => {
+    expect(resolveSettingsTab('bogus')).toBe('account');
   });
 
-  it('does not check or reference org permissions — it has nothing to gate yet', () => {
-    expect(source).not.toMatch(/hasPermission|useOrgContext/);
-  });
-
-  it('renders only the shared PlaceholderPage — still true today, so real settings content has not silently landed here ungated', () => {
-    expect(source).toContain('PlaceholderPage');
-    expect(source.split('\n').filter((l) => l.trim().length > 0).length).toBeLessThanOrEqual(6);
+  it('falls back to "account" when no section is given', () => {
+    expect(resolveSettingsTab(undefined)).toBe('account');
   });
 });
