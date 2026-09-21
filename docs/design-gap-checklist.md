@@ -98,20 +98,68 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
       for a counter-offer flow; would need its own real design), "Accept"
       renamed "Approve" to match the real action. Sidebar badge wired to the
       real pending count.
-- [ ] **Analytics** — full build spec ready (6-month revenue bar chart, session-mix
-      breakdown bars by appointment type, attendance-rate stat tile). Needs
-      backend: monthly revenue rollup, appointment-type distribution %,
-      completed-vs-no-show ratio with month-over-month delta.
-- [ ] **Activity** — full build spec ready: a practice-wide, READ-ONLY, filterable
-      audit timeline (Sessions/Notes/Payments/Messages/Clients), pulling from
-      multiple existing backends into one feed. **Important distinction found**:
+- [x] **Analytics — built 2026-09-21.** Real 6-month revenue bar chart,
+      session-mix breakdown bars, and an attendance-rate stat tile with a
+      month-over-month delta — `src/pages/analytics/useAnalytics.ts` (pure
+      aggregation/bucketing functions, unit-tested + mutation-checked) +
+      rebuilt `AnalyticsPage.tsx`. No backend rollup exists for any of these
+      three (confirmed against billing_payment and backend-initial) — all
+      three are real client-side aggregation over real data, not mocked:
+      **Revenue** pages through `listTransactions()` (`api/billing.ts`, the
+      same call EarningsPage already makes) 6 months back, summing real
+      `grossPaise` per calendar month; rendered with `recharts` (already a
+      dependency, previously unused — this is its first real page). **Session
+      mix** calls `getMyAppointments(therapistId, {startDate, endDate,
+      status:'completed'})` (`api/appointmentsBackend.ts`) and buckets by the
+      REAL `Appointment.type` enum. **Attendance** issues two more calls to
+      the same endpoint (this month / last month, `status=completed,no_show`)
+      and computes `completed / (completed + no_show)` client-side.
+      **Deliberate deviation from the design mock**: session-mix buckets are
+      the real 4-value `type` field (individual/couples/family/group) — NOT
+      the design's fictional Individual/Couples/Group/Intake split. There is
+      no 5th "Intake" appointment type anywhere in the schema. The separate
+      real `sessionCategory` field ('intro'|'regular', confirmed present in
+      the handler's response but missing from this repo's own
+      `RawAppointment` type until this build added it) is surfaced as a
+      secondary "Includes N intro sessions" note instead of a fabricated 5th
+      bucket.
+- [x] **Activity — built 2026-09-21.** Real, chronological, filterable
+      practice-wide audit timeline (All/Sessions/Notes/Payments/Messages/Clients
+      pill filters), merging FIVE independent real sources — no mocked or
+      fabricated rows. `src/pages/activity/useActivity.ts` (merge/sort/filter,
+      unit-tested + mutation-checked) + `src/pages/ActivityPage.tsx`
+      (timeline-rail UI matching the design's `isActivity` block). Confirmed
       this is a THIRD, different concept from two things already built —
-      don't confuse or reuse them:
+      not confused with either:
       1. Dashboard's small "Client activity" rail widget in the design (narrow,
          client-engagement-only) — already replaced in code by a Tasks feed.
       2. The existing `TaskActivityFeed.tsx` component — despite its name, this
-         is the Tasks feature (checkboxes, categories), not Activity. Do not
-         start from it.
+         is the Tasks feature (checkboxes, categories), not Activity. Untouched.
+
+      Sources:
+      - **Sessions** — `getMyAppointments(therapistId, {status:'completed', startDate, endDate})`,
+        already wired (`api/appointmentsBackend.ts`).
+      - **Notes** — `GET /clinical-notes/signed` (backend-initial), which had
+        no date-range param before this session — added `startDate`/`endDate`
+        query support (calls the already-implemented-but-never-called
+        `getTherapistNotesByDateRange` service method; no date range still
+        falls back to the old `limit=50` behavior). New client fn
+        `listSignedNotes()` in `api/clinicalNotes.ts`.
+      - **Payments** — `listTransactions({types:['session_earning']})` +
+        `listPayouts()` (`api/billing.ts`), merged and sorted client-side.
+      - **Clients** — mood check-ins/missed check-ins/intake completions.
+        **No backend source existed for this at all** — added a new
+        backend-initial route, `GET /clients/activity-events?startDate=&endDate=`
+        (`clients` Lambda), scoped to the caller's own clients the same way
+        `GET /therapist/{id}/clients` already is. New client fn in the new
+        `api/clientActivity.ts`.
+      - **Messages** — `GET /chat/conversations/{userId}`. **Known, disclosed
+        limitation**: this route only ever returns the single most recent
+        message per conversation, not a full log (no "every message across
+        every conversation" route exists, nor should one — that's every DM in
+        the practice). The Activity page renders an explicit note ("Messages
+        shows only the most recent message per conversation, not a complete
+        message log.") rather than implying a complete history.
 
 ## P1 — real pages, high-visual-impact gaps
 

@@ -86,6 +86,15 @@ export interface RawAppointment {
   videoRoomUrl: string | null;
   /** Hex color overriding the type-based default for this specific session, or null to use the default. */
   colorOverride: string | null;
+  /**
+   * 'intro' | 'regular' (prisma/schema.prisma `Appointment.sessionCategory`,
+   * default 'regular') — a real column the handler's `findMany` already
+   * returns (it uses `include`, which carries every base scalar field, not
+   * `select`) but this hand-typed interface previously omitted. Not a
+   * session TYPE — it's a flag layered on top of one of the 4 real `type`
+   * values, not a 5th bucket (see pages/analytics/useAnalytics.ts).
+   */
+  sessionCategory?: 'intro' | 'regular';
   client: { id: number; email: string; firstName: string; lastName: string } | null;
   therapist: { id: number; email: string; firstName: string; lastName: string };
 }

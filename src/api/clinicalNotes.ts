@@ -64,6 +64,30 @@ export function listTherapistNotes(therapistId: string, noteType?: string) {
   }).then((res) => res.data);
 }
 
+export interface ListSignedNotesFilters {
+  /** Both must be given together — the server only engages the date-range
+   *  query (getTherapistNotesByDateRange) when both are present; otherwise
+   *  it falls back to its default "last 50 signed notes" behaviour. */
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * GET /clinical-notes/signed?therapistId=&startDate=&endDate= —
+ * assertSelf-enforced server-side, always the caller's own SIGNED notes.
+ * Backs the Activity page's "Notes" filter: with a date range it returns
+ * signed notes within that window; omitted, the last 50 regardless of age.
+ */
+export function listSignedNotes(therapistId: string, filters: ListSignedNotesFilters = {}) {
+  const params = new URLSearchParams({ therapistId });
+  if (filters.startDate) params.set('startDate', filters.startDate);
+  if (filters.endDate) params.set('endDate', filters.endDate);
+  return apiFetch(`/clinical-notes/signed?${params.toString()}`, {
+    schema: z.object({ success: z.boolean(), data: z.array(clinicalNoteSchema) }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}
+
 export function getClinicalNote(id: number) {
   return apiFetch(`/clinical-notes/${id}`, {
     schema: z.object({ success: z.boolean(), data: clinicalNoteSchema }),
