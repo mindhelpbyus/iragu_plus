@@ -63,18 +63,46 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
       this one does not, so any authenticated caller can edit any therapist's
       profile by numeric id today. This frontend only ever sends the caller's
       own id, which is correct usage, but the hole itself needs a backend fix.
-- [x] **Support — built 2026-09-20.** 3 real category tiles + a real `mailto:`
-      contact card, using `support@iragu.com` (the same address backend-initial's
-      own transactional emails already point therapists to). **Deliberate
-      deviation from the design mock**: no new-ticket form, no ticket list with
-      status pills. A real ticketing backend exists (`Ticket`/`TicketMessage`
-      Prisma models) but is owned by `backend_support_api`, a standalone peer
-      service not checked out in this workspace with no base URL configured
-      anywhere in iragu_plus — building a form against it would either silently
-      fail or need a fabricated success toast. Same call the client-side sibling
-      app made for its own Help & Support page (`backend-initial/docs/specs/
-      iragu-client-web-app/requirements.md` row 11: "Static content, no backend
-      required for MVP").
+- [x] **Support — real ticket integration built 2026-09-21 (supersedes the
+      2026-09-20 mailto-only build below).** `backend_support_api` is now
+      wired for real (`src/api/support.ts`): own-ticket list (cursor-
+      paginated, status filter), "New ticket" form (subject/body/product/
+      category/priority, same vocabulary `bedrock_support_center` uses
+      against the same backend), ticket detail + reply thread, and a reopen
+      action whose enable/disable state mirrors the server's real 72h
+      window (`pages/support/ticketHelpers.ts`'s `canReopen` — the server,
+      not this check, is the actual gate). Auth is the same ID-token
+      pattern `api/billing.ts` already uses for a different backend behind
+      this same shared Gateway; base URL is the existing `VITE_API_BASE_URL`
+      (backend_support_api's routes mount at the gateway root, e.g.
+      `/tickets`, not under a path prefix). The original 3 category tiles +
+      `mailto:` card are KEPT, not deleted — demoted to a "Prefer email?"
+      fallback section below the real ticket UI, real tickets are now the
+      primary path.
+      **Known dependency, not yet resolved**: `backend_support_api`'s
+      Lambda-level CORS header (`createSupportHandler.js`) previously
+      allow-listed only `bedrock_support_center`'s own origin
+      (`CORS_ALLOWED_ORIGIN`, a single hardcoded string) — a real bug fixed
+      the same day in that repo (now `CORS_ALLOWED_ORIGINS`, a real
+      multi-origin allowlist including `http://localhost:5173` and
+      `https://dev.plus.iragu.co.in`; see that repo's
+      `infrastructure/lib/support-api-stack.ts` and
+      `src/lib/createSupportHandler.js`). That fix needs a real
+      `backend_support_api` deploy before this page's API calls will
+      actually succeed against live dev — until then, calls from this app
+      will fail at the browser's CORS layer even though the code here is
+      correct and API Gateway's own CORS config already allowed it.
+- [x] **Support — mailto-only build, 2026-09-20 (historical, superseded
+      above).** 3 real category tiles + a real `mailto:` contact card, using
+      `support@iragu.com` (the same address backend-initial's own
+      transactional emails already point therapists to). At the time,
+      `backend_support_api` wasn't checked out in this workspace and had no
+      base URL configured anywhere in iragu_plus, so a ticket form would
+      have either silently failed or needed a fabricated success toast —
+      same reasoning the client-side sibling app used for its own Help &
+      Support page (`backend-initial/docs/specs/iragu-client-web-app/
+      requirements.md` row 11: "Static content, no backend required for
+      MVP"). That constraint no longer holds (see the entry above).
 - [x] **Notes — built 2026-09-19.** Two-column list+SOAP-detail page,
       real `listTherapistNotes`/`updateClinicalNote`/`signClinicalNote` API
       client added (`src/api/clinicalNotes.ts`), autosave-on-blur per SOAP
