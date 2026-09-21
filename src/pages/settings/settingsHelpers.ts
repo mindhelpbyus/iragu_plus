@@ -4,6 +4,7 @@
  * — see SettingsPage.test.ts's original comment). Every function here is a
  * real transform used by the page, not a rubber-stamp.
  */
+import type { DaySchedule, WeeklySchedule } from '../../api/availability';
 
 /** "2,500" (rupee input string, no symbol) -> 250000 (paise). Returns null for
  *  anything that isn't a non-negative number — the caller must not save on null. */
@@ -97,4 +98,114 @@ export function normalizeTotpCode(input: string): string | null {
  *  app has no reachable client for (see SupportPage's module doc). */
 export function buildSupportMailto(subject: string, supportEmail: string): string {
   return `mailto:${supportEmail}?subject=${encodeURIComponent(subject)}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly schedule grid — pure state <-> API-shape transforms for
+// Availability's weekly working-hours grid. The API shape (day -> DaySchedule)
+// is real: backend-initial's therapist-availability handler
+// (handler.ts:297-327) via AvailabilityService.setWeeklySchedule
+// (availability-service.ts:41-53, 97-121). Kept separate from the row shape
+// so the grid can hold a blank/disabled day (times still editable, just not
+// saved as available) without losing what the therapist typed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Monday-first — matches the design grid and therapistApp's own `_dayNames`. */
+export const WEEKLY_SCHEDULE_DAYS = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+] as const;
+
+export type WeeklyScheduleDay = (typeof WEEKLY_SCHEDULE_DAYS)[number];
+
+export interface DayScheduleRow {
+  day: WeeklyScheduleDay;
+  isAvailable: boolean;
+  /** "HH:mm", 24-hour — matches <input type="time">'s native value format. */
+  startTime: string;
+  endTime: string;
+  /** "" means "no lunch break set" — both must be set together or neither. */
+  lunchStart: string;
+  lunchEnd: string;
+}
+
+export function dayLabel(day: WeeklyScheduleDay): string {
+  return day.charAt(0).toUpperCase() + day.slice(1);
+}
+
+const DEFAULT_START_TIME = '09:00';
+const DEFAULT_END_TIME = '17:00';
+
+/** API weeklySchedule -> full 7-row grid, in day order. A day missing from
+ *  the API map (never configured) becomes an unavailable row with sane
+ *  default times, ready to be turned on rather than filled in from scratch. */
+export function weeklyScheduleToRows(schedule: WeeklySchedule | null | undefined): DayScheduleRow[] {
+  return WEEKLY_SCHEDULE_DAYS.map((day) => {
+    const entry = schedule?.[day];
+    return {
+      day,
+      isAvailable: entry?.isAvailable ?? false,
+      startTime: entry?.startTime ?? DEFAULT_START_TIME,
+      endTime: entry?.endTime ?? DEFAULT_END_TIME,
+      lunchStart: entry?.lunchStart ?? '',
+      lunchEnd: entry?.lunchEnd ?? '',
+    };
+  });
+}
+
+/** Grid rows -> the exact PUT body shape. Every day is sent (including
+ *  unavailable ones, `isAvailable: false`) so turning a day off actually
+ *  clears it server-side instead of leaving a stale entry unmentioned. */
+export function rowsToWeeklySchedule(rows: DayScheduleRow[]): WeeklySchedule {
+  const schedule: WeeklySchedule = {};
+  for (const row of rows) {
+    const entry: DaySchedule = {
+      startTime: row.startTime,
+      endTime: row.endTime,
+      isAvailable: row.isAvailable,
+    };
+    if (row.lunchStart && row.lunchEnd) {
+      entry.lunchStart = row.lunchStart;
+      entry.lunchEnd = row.lunchEnd;
+    }
+    schedule[row.day] = entry;
+  }
+  return schedule;
+}
+
+/** Client-side sanity check before saving — mirrors what a nonsense payload
+ *  would do server-side (an inverted or missing range just produces zero
+ *  bookable slots, silently) by catching it here instead with a real
+ *  message. Returns the first problem found, or null when every available
+ *  day's times make sense. Time strings compare correctly as plain strings
+ *  because <input type="time"> always yields zero-padded 24-hour "HH:mm". */
+export function validateScheduleRows(rows: DayScheduleRow[]): string | null {
+  for (const row of rows) {
+    if (!row.isAvailable) continue;
+    if (!row.startTime || !row.endTime) {
+      return `${dayLabel(row.day)}: start and end time are required.`;
+    }
+    if (row.startTime >= row.endTime) {
+      return `${dayLabel(row.day)}: start time must be before end time.`;
+    }
+    const hasLunchStart = row.lunchStart !== '';
+    const hasLunchEnd = row.lunchEnd !== '';
+    if (hasLunchStart !== hasLunchEnd) {
+      return `${dayLabel(row.day)}: set both a lunch start and end time, or neither.`;
+    }
+    if (hasLunchStart && hasLunchEnd) {
+      if (row.lunchStart >= row.lunchEnd) {
+        return `${dayLabel(row.day)}: lunch start must be before lunch end.`;
+      }
+      if (row.lunchStart < row.startTime || row.lunchEnd > row.endTime) {
+        return `${dayLabel(row.day)}: lunch break must fall within working hours.`;
+      }
+    }
+  }
+  return null;
 }

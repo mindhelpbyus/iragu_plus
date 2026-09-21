@@ -119,3 +119,73 @@ export function updateTherapistTimezone(therapistId: number, timezone: string) {
     rawEnvelope: true,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly recurring schedule — Settings' "weekly working hours" grid.
+//
+// A different thing from `TimeSlot`/`getDaySlots` above (individual bookable
+// slots on one calendar date) and from `getTherapistTimezone` (same route,
+// narrower schema): this is the recurring per-day pattern
+// (day -> {startTime,endTime,isAvailable,lunchStart?,lunchEnd?}) that the
+// backend expands into slots. Real route, read carefully from source rather
+// than guessed — backend-initial/src/lambdas/therapist-availability/src/
+// handler.ts:277-327, backed by AvailabilityService.getTherapistAvailability
+// / setWeeklySchedule (src/lib/availability-service.ts:41-121). Day keys are
+// lowercase full weekday names ('monday'..'sunday') — see
+// availability-service.ts's getDayName() and therapistApp's own
+// ScheduleSettingsService._dayNames, which use the same vocabulary against
+// the same route.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const dayScheduleSchema = z.object({
+  startTime: z.string(),
+  endTime: z.string(),
+  isAvailable: z.boolean(),
+  lunchStart: z.string().optional(),
+  lunchEnd: z.string().optional(),
+  // Server-computed from lunchStart/lunchEnd (AvailabilityService.buildDayEntry)
+  // — never sent by the client, only ever read back.
+  segments: z.array(z.object({ startTime: z.string(), endTime: z.string() })).optional(),
+});
+
+/** One day's entry in a `WeeklySchedule`, exactly as the backend stores/returns it. */
+export type DaySchedule = z.infer<typeof dayScheduleSchema>;
+
+const weeklyScheduleSchema = z.record(z.string(), dayScheduleSchema);
+
+/** day (lowercase full name) -> DaySchedule. Unset days are simply absent. */
+export type WeeklySchedule = z.infer<typeof weeklyScheduleSchema>;
+
+const therapistAvailabilitySchema = z.object({
+  userId: z.number(),
+  timezone: z.string(),
+  weeklySchedule: weeklyScheduleSchema,
+});
+
+/**
+ * GET /therapists/availability/{id} — full shape (timezone + weeklySchedule),
+ * for the Settings weekly-schedule grid. `weeklySchedule` is `{}` for a
+ * therapist who has never set one — not a 404 — so an empty object is a real,
+ * valid "no days configured yet" response, not a load failure.
+ */
+export function getWeeklySchedule(therapistId: number) {
+  return apiFetch(`/therapists/availability/${therapistId}`, {
+    schema: z.object({ success: z.boolean(), data: therapistAvailabilitySchema }),
+    rawEnvelope: true,
+  }).then((res) => res.data);
+}
+
+/**
+ * PUT /therapists/availability/{id} with `{ weeklySchedule }` — handler.ts:
+ * 297-327, `if (body.weeklySchedule) { ... setWeeklySchedule(...) }`. Send
+ * only startTime/endTime/isAvailable/lunchStart/lunchEnd per day; the backend
+ * recomputes `segments` itself and would ignore a client-sent one anyway.
+ */
+export function putWeeklySchedule(therapistId: number, weeklySchedule: WeeklySchedule) {
+  return apiFetch(`/therapists/availability/${therapistId}`, {
+    method: 'PUT',
+    body: { weeklySchedule },
+    schema: z.object({ success: z.boolean(), message: z.string().optional() }),
+    rawEnvelope: true,
+  });
+}

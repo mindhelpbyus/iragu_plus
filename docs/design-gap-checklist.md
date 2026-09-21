@@ -21,10 +21,20 @@ Analytics, Activity.** Their entries below are full build specs, not just gap no
         and RCI/license number are read-only (no route writes `title`; license
         fields freeze once verified — `shared/credential-lock.ts`).
       - **Availability** — buffer-before/after minutes real via
-        `PUT /therapists/{id}/profile`. Weekly working-hours grid and Google/
-        Outlook calendar sync are explicit in-page gap notices, not fake toggles
-        — no route writes `weeklySchedule`, and no calendar-sync Lambda exists
-        anywhere in backend-initial.
+        `PUT /therapists/{id}/profile`. **Updated 2026-09-21**: the weekly
+        working-hours grid is now real and wired too — a 7-row Monday–Sunday
+        grid (available toggle, start/end time, optional lunch break) backed
+        by `GET`/`PUT /therapists/availability/{id}` with a `{ weeklySchedule
+        }` body (`therapist-availability` Lambda, `handler.ts:277-327`,
+        `AvailabilityService.setWeeklySchedule`). This is the same route
+        therapistApp's schedule-settings screen writes, and the same column
+        (`TherapistProfile.weeklySchedule`) `AvailabilityService.
+        generateTimeSlots` reads to gate client booking — a save here changes
+        what a client can actually book. The previous entry claiming "no
+        route writes `weeklySchedule`" was wrong; the route existed and was
+        live, just not called from this app. Google/Outlook calendar sync
+        remains an explicit in-page gap notice — no calendar-sync Lambda or
+        OAuth integration exists anywhere in backend-initial.
       - **Services** — single default session fee + session format (online/
         in-person/both) real via the same profile PUT. The design's per-service
         catalog (individual/couples/group, each with its own duration+fee) is a

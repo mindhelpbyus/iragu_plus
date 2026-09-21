@@ -9,7 +9,14 @@ import {
   validateNewPassword,
   normalizeTotpCode,
   buildSupportMailto,
+  dayLabel,
+  weeklyScheduleToRows,
+  rowsToWeeklySchedule,
+  validateScheduleRows,
+  WEEKLY_SCHEDULE_DAYS,
+  type DayScheduleRow,
 } from './settingsHelpers';
+import type { WeeklySchedule } from '../../api/availability';
 
 describe('rupeesToPaise', () => {
   it('converts a plain rupee string to paise', () => {
@@ -175,5 +182,138 @@ describe('buildSupportMailto', () => {
     expect(buildSupportMailto('Payout / billing issue', 'support@iragu.com')).toBe(
       'mailto:support@iragu.com?subject=Payout%20%2F%20billing%20issue'
     );
+  });
+});
+
+describe('dayLabel', () => {
+  it('capitalises the day key', () => {
+    expect(dayLabel('monday')).toBe('Monday');
+    expect(dayLabel('sunday')).toBe('Sunday');
+  });
+});
+
+function makeRow(overrides: Partial<DayScheduleRow> = {}): DayScheduleRow {
+  return {
+    day: 'monday',
+    isAvailable: true,
+    startTime: '09:00',
+    endTime: '17:00',
+    lunchStart: '',
+    lunchEnd: '',
+    ...overrides,
+  };
+}
+
+describe('weeklyScheduleToRows', () => {
+  it('produces all 7 days in Monday-first order', () => {
+    const rows = weeklyScheduleToRows(undefined);
+    expect(rows.map((r) => r.day)).toEqual([...WEEKLY_SCHEDULE_DAYS]);
+  });
+
+  it('maps a configured day from the real API shape', () => {
+    const schedule: WeeklySchedule = {
+      monday: { startTime: '10:00', endTime: '18:00', isAvailable: true, lunchStart: '13:00', lunchEnd: '14:00' },
+    };
+    const rows = weeklyScheduleToRows(schedule);
+    const monday = rows.find((r) => r.day === 'monday')!;
+    expect(monday).toEqual({
+      day: 'monday',
+      isAvailable: true,
+      startTime: '10:00',
+      endTime: '18:00',
+      lunchStart: '13:00',
+      lunchEnd: '14:00',
+    });
+  });
+
+  it('defaults a day absent from the API map to unavailable with sane default times', () => {
+    const rows = weeklyScheduleToRows({});
+    const tuesday = rows.find((r) => r.day === 'tuesday')!;
+    expect(tuesday.isAvailable).toBe(false);
+    expect(tuesday.startTime).toBe('09:00');
+    expect(tuesday.endTime).toBe('17:00');
+    expect(tuesday.lunchStart).toBe('');
+    expect(tuesday.lunchEnd).toBe('');
+  });
+
+  it('treats null the same as an empty schedule', () => {
+    expect(weeklyScheduleToRows(null)).toEqual(weeklyScheduleToRows({}));
+  });
+});
+
+describe('rowsToWeeklySchedule', () => {
+  it('sends every day, including unavailable ones', () => {
+    const rows = WEEKLY_SCHEDULE_DAYS.map((day) => makeRow({ day, isAvailable: day === 'monday' }));
+    const schedule = rowsToWeeklySchedule(rows);
+    expect(Object.keys(schedule).sort()).toEqual([...WEEKLY_SCHEDULE_DAYS].sort());
+    expect(schedule.tuesday.isAvailable).toBe(false);
+  });
+
+  it('omits lunchStart/lunchEnd when no lunch break is set', () => {
+    const schedule = rowsToWeeklySchedule([makeRow()]);
+    expect(schedule.monday).toEqual({ startTime: '09:00', endTime: '17:00', isAvailable: true });
+    expect(schedule.monday.lunchStart).toBeUndefined();
+    expect(schedule.monday.lunchEnd).toBeUndefined();
+  });
+
+  it('includes lunchStart/lunchEnd when both are set', () => {
+    const schedule = rowsToWeeklySchedule([makeRow({ lunchStart: '13:00', lunchEnd: '14:00' })]);
+    expect(schedule.monday.lunchStart).toBe('13:00');
+    expect(schedule.monday.lunchEnd).toBe('14:00');
+  });
+
+  it('round-trips with weeklyScheduleToRows for a fully configured week', () => {
+    const rows = WEEKLY_SCHEDULE_DAYS.map((day) =>
+      makeRow({ day, lunchStart: '13:00', lunchEnd: '14:00' })
+    );
+    const schedule = rowsToWeeklySchedule(rows);
+    expect(weeklyScheduleToRows(schedule)).toEqual(rows);
+  });
+});
+
+describe('validateScheduleRows', () => {
+  it('accepts a valid available day', () => {
+    expect(validateScheduleRows([makeRow()])).toBeNull();
+  });
+
+  it('ignores times on an unavailable day entirely', () => {
+    const row = makeRow({ isAvailable: false, startTime: '', endTime: '' });
+    expect(validateScheduleRows([row])).toBeNull();
+  });
+
+  it('rejects a start time at or after the end time', () => {
+    const row = makeRow({ startTime: '17:00', endTime: '17:00' });
+    expect(validateScheduleRows([row])).toMatch(/start time must be before end time/);
+
+    const inverted = makeRow({ startTime: '18:00', endTime: '09:00' });
+    expect(validateScheduleRows([inverted])).toMatch(/start time must be before end time/);
+  });
+
+  it('rejects a lunch start without a matching lunch end and vice versa', () => {
+    expect(validateScheduleRows([makeRow({ lunchStart: '13:00' })])).toMatch(/both a lunch start and end/);
+    expect(validateScheduleRows([makeRow({ lunchEnd: '14:00' })])).toMatch(/both a lunch start and end/);
+  });
+
+  it('rejects a lunch break outside working hours', () => {
+    const before = makeRow({ startTime: '10:00', endTime: '17:00', lunchStart: '08:00', lunchEnd: '09:00' });
+    expect(validateScheduleRows([before])).toMatch(/within working hours/);
+
+    const after = makeRow({ startTime: '09:00', endTime: '17:00', lunchStart: '17:30', lunchEnd: '18:00' });
+    expect(validateScheduleRows([after])).toMatch(/within working hours/);
+  });
+
+  it('rejects an inverted lunch break', () => {
+    const row = makeRow({ lunchStart: '14:00', lunchEnd: '13:00' });
+    expect(validateScheduleRows([row])).toMatch(/lunch start must be before lunch end/);
+  });
+
+  it('accepts a valid lunch break within working hours', () => {
+    const row = makeRow({ lunchStart: '13:00', lunchEnd: '14:00' });
+    expect(validateScheduleRows([row])).toBeNull();
+  });
+
+  it('checks every row, not just the first', () => {
+    const rows = [makeRow({ day: 'monday' }), makeRow({ day: 'tuesday', startTime: '17:00', endTime: '09:00' })];
+    expect(validateScheduleRows(rows)).toMatch(/Tuesday/);
   });
 });
