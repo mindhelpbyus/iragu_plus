@@ -78,8 +78,8 @@ describe('buildProfilePreview', () => {
   });
 
   it('joins selected languages by real index, not fabricated text', () => {
-    // English=0, Malayalam=2 in SignupPage's LANGUAGES array
-    expect(buildProfilePreview({ ...base, langIndices: [0, 2] }).langs).toBe('English, Malayalam');
+    // English=0, Telugu=2 in the real backend-initial canonical LANGUAGES order
+    expect(buildProfilePreview({ ...base, langIndices: [0, 2] }).langs).toBe('English, Telugu');
   });
 
   it('shows a placeholder when no bio was typed yet', () => {

@@ -95,12 +95,18 @@ export function useTicketList(statusFilter: TicketStatus | 'all') {
 /** Create-ticket form submission. */
 export function useCreateTicket(onCreated: (ticket: Ticket) => void) {
   const [submitting, setSubmitting] = useState(false);
+  // Minted once for this modal-open session (same pattern as
+  // InviteClientModal's idempotencyKey) — stable across a retry of the same
+  // submit attempt, not regenerated per call. api/support.ts's mutating
+  // functions used to generate their own key internally, which made a
+  // caller-level retry structurally impossible to dedupe; this is the fix.
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
 
   const submit = useCallback(
     async (input: CreateTicketInput) => {
       setSubmitting(true);
       try {
-        const ticket = await createTicket(input);
+        const ticket = await createTicket(input, idempotencyKey);
         toast.success(`Ticket ${ticket.ticketNumber} created.`);
         onCreated(ticket);
         return ticket;
@@ -151,7 +157,14 @@ export function useTicketDetail(ticketNumber: string | null) {
       if (!ticketNumber) return false;
       setReplying(true);
       try {
-        await postTicketReply(ticketNumber, { body, attachmentIds });
+        // Minted here, at the call site, rather than inside api/support.ts —
+        // each reply is its own distinct message, so a fresh key per call is
+        // correct (unlike a form that stays open across retries, two
+        // separate replies must never share a key); the fix this closes is
+        // that the key used to be generated even deeper, inside the fetch
+        // helper itself, making it structurally impossible for a caller to
+        // ever reuse one even if it wanted to.
+        await postTicketReply(ticketNumber, { body, attachmentIds }, crypto.randomUUID());
         await load();
         return true;
       } catch (err) {
@@ -169,7 +182,7 @@ export function useTicketDetail(ticketNumber: string | null) {
       if (!ticketNumber) return false;
       setReopening(true);
       try {
-        await reopenTicket(ticketNumber, reason);
+        await reopenTicket(ticketNumber, reason, crypto.randomUUID());
         toast.success('Ticket reopened.');
         await load();
         return true;

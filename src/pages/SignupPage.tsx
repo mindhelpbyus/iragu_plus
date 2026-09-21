@@ -186,7 +186,7 @@ export default function SignupPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const user = await register({
+      await register({
         email,
         password,
         firstName,
@@ -194,7 +194,16 @@ export default function SignupPage() {
         phoneNumber: phone || undefined,
         role: 'therapist',
       });
-      setUser(user);
+      // Deliberately NOT calling setUser() here. register() only calls Cognito
+      // signUp() — the account has no session yet (pending_confirmation) — so
+      // the returned AuthUser is optimistic, not real. Setting it into the
+      // global auth store this early used to flip /signup's own route guard
+      // (`user && user.role !== 'client' -> redirect to /dashboard`),
+      // unmounting this wizard before step 2 ever rendered and sending every
+      // subsequent API call out with no real Authorization header (401 ->
+      // bounced to /login). The real session — and the real setUser() call —
+      // happens in handleConfirmSubmit below, once verifyEmail()+login()
+      // have actually produced one.
       toast.success('Account created — let’s finish your profile');
       setStep(2);
     } catch (err) {
@@ -211,14 +220,17 @@ export default function SignupPage() {
    * header) — ProfileCompletionPage re-prompts for it once a session exists.
    */
   const finish = () => {
-    saveProfileDraft({
-      designation: DESIGNATIONS[desig] ?? null,
-      specialties: specs.map((i) => SPECIALTIES[i]).filter((v): v is string => Boolean(v)),
-      modalities: modalities.map((i) => MODALITIES[i]).filter((v): v is string => Boolean(v)),
-      languages: langs.map((i) => LANGUAGES[i]).filter((v): v is string => Boolean(v)),
-      serviceFeeRupees: services.length > 0 ? SERVICES[services[0]].defaultFee : null,
-      bio,
-    });
+    saveProfileDraft(
+      {
+        designation: DESIGNATIONS[desig] ?? null,
+        specialties: specs.map((i) => SPECIALTIES[i]).filter((v): v is string => Boolean(v)),
+        modalities: modalities.map((i) => MODALITIES[i]).filter((v): v is string => Boolean(v)),
+        languages: langs.map((i) => LANGUAGES[i]).filter((v): v is string => Boolean(v)),
+        serviceFeeRupees: services.length > 0 ? SERVICES[services[0]].defaultFee : null,
+        bio,
+      },
+      email,
+    );
     setStep(6);
   };
 

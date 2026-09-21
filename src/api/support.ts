@@ -159,11 +159,11 @@ export interface CreateTicketInput {
   priority: TicketPriority;
 }
 
-export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
+export async function createTicket(input: CreateTicketInput, idempotencyKey: string): Promise<Ticket> {
   return apiFetch('/tickets', {
     method: 'POST',
     headers: await supportHeaders(),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey,
     body: {
       subject: input.subject,
       body: input.body,
@@ -215,13 +215,14 @@ export async function getTicket(ticketNumber: string): Promise<TicketDetail> {
 
 export async function postTicketReply(
   ticketNumber: string,
-  input: { body?: string; attachmentIds?: string[] }
+  input: { body?: string; attachmentIds?: string[] },
+  idempotencyKey: string
 ): Promise<TicketMessage> {
   const body = input.body?.trim();
   return apiFetch(`/tickets/${encodeURIComponent(ticketNumber)}/messages`, {
     method: 'POST',
     headers: await supportHeaders(),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey,
     body: { body: body || undefined, attachmentIds: input.attachmentIds ?? [] },
     schema: ticketMessageSchema,
   });
@@ -232,11 +233,11 @@ export async function postTicketReply(
 // REOPEN_WINDOW_EXPIRED past that) — see pages/support/ticketHelpers.ts's
 // isWithinReopenWindow for the client-side UX mirror of the same window.
 
-export async function reopenTicket(ticketNumber: string, reason: string): Promise<Ticket> {
+export async function reopenTicket(ticketNumber: string, reason: string, idempotencyKey: string): Promise<Ticket> {
   return apiFetch(`/tickets/${encodeURIComponent(ticketNumber)}/reopen`, {
     method: 'POST',
     headers: await supportHeaders(),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey,
     body: { reason },
     schema: ticketSchema,
   });
@@ -256,12 +257,13 @@ export type PresignAttachmentResponse = z.infer<typeof presignResponseSchema>;
 
 export async function presignTicketAttachment(
   ticketNumber: string,
-  input: { filename: string; contentType: string; sizeBytes: number }
+  input: { filename: string; contentType: string; sizeBytes: number },
+  idempotencyKey: string
 ): Promise<PresignAttachmentResponse> {
   return apiFetch(`/tickets/${encodeURIComponent(ticketNumber)}/attachments/presign`, {
     method: 'POST',
     headers: await supportHeaders(),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey,
     body: input,
     schema: presignResponseSchema,
   });
@@ -269,14 +271,15 @@ export async function presignTicketAttachment(
 
 export async function confirmTicketAttachment(
   ticketNumber: string,
-  attachmentId: string
+  attachmentId: string,
+  idempotencyKey: string
 ): Promise<TicketAttachment> {
   return apiFetch(
     `/tickets/${encodeURIComponent(ticketNumber)}/attachments/${encodeURIComponent(attachmentId)}/confirm`,
     {
       method: 'POST',
       headers: await supportHeaders(),
-      idempotencyKey: crypto.randomUUID(),
+      idempotencyKey,
       body: {},
       schema: ticketAttachmentSchema,
     }
@@ -322,26 +325,44 @@ export async function uploadTicketAttachment(
   ticketNumber: string,
   file: File
 ): Promise<{ ok: true; attachment: TicketAttachment } | { ok: false; error: string }> {
+  // Presign and confirm are two distinct mutations (one creates a pending
+  // attachment row, the other marks it uploaded) — each gets its own stable
+  // key, minted once for this one upload attempt, so a retry of either half
+  // reuses its key instead of registering as a brand-new request.
+  const presignKey = crypto.randomUUID();
+  const confirmKey = crypto.randomUUID();
+
   let presigned: PresignAttachmentResponse;
   try {
-    presigned = await presignTicketAttachment(ticketNumber, {
-      filename: file.name,
-      contentType: file.type || 'application/octet-stream',
-      sizeBytes: file.size,
-    });
+    presigned = await presignTicketAttachment(
+      ticketNumber,
+      { filename: file.name, contentType: file.type || 'application/octet-stream', sizeBytes: file.size },
+      presignKey
+    );
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Could not start the upload.' };
   }
 
-  const put = await fetch(presigned.uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  });
+  // The browser PUT can REJECT (network failure, a CORS-blocked request),
+  // not just resolve with a non-OK status — unlike apiFetch's calls, this is
+  // a raw fetch() with no wrapping error handling of its own, so an
+  // unwrapped throw here would propagate as an unhandled rejection instead
+  // of the same { ok: false } shape every other failure in this function
+  // already returns.
+  let put: Response;
+  try {
+    put = await fetch(presigned.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+  } catch {
+    return { ok: false, error: 'Upload failed. Please check your connection and try again.' };
+  }
   if (!put.ok) return { ok: false, error: 'Upload failed. Please try again.' };
 
   try {
-    const attachment = await confirmTicketAttachment(ticketNumber, presigned.attachmentId);
+    const attachment = await confirmTicketAttachment(ticketNumber, presigned.attachmentId, confirmKey);
     return { ok: true, attachment };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Could not confirm the upload.' };

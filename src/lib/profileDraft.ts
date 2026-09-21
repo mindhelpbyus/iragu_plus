@@ -19,9 +19,24 @@
  * `sessionStorage`) so these stay unit-testable in this repo's DOM-less
  * vitest environment — pass an in-memory fake in tests, never reference
  * `sessionStorage` in an assertion.
+ *
+ * SCOPED BY EMAIL, deliberately. The draft is written before a real session
+ * exists and cleared only on a successful save — never on merely abandoning
+ * the wizard at the confirm-email step, and a plain link-click there doesn't
+ * clear sessionStorage. Without an ownership check, a second, unrelated
+ * person logging in on the SAME TAB later (e.g. a shared reception computer)
+ * would have person A's bio/specialties/fee silently prefilled into their
+ * own ProfileCompletionPage. `loadProfileDraft` now requires the CURRENT
+ * caller's own email and refuses to return a draft saved under a different
+ * one — comparison is case-insensitive (Cognito emails aren't guaranteed a
+ * consistent case between signup and login).
  */
 
 const PROFILE_DRAFT_STORAGE_KEY = 'iragu_plus:signup-profile-draft:v1';
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
 
 export interface ProfileDraft {
   /** Step 2's chosen professional designation label, e.g. "Clinical
@@ -56,32 +71,43 @@ function safeStorage(storage: Storage): Storage | null {
 }
 
 /** Best-effort save — a storage failure must never block the signup wizard
- *  from advancing to the confirm-email step. */
-export function saveProfileDraft(draft: ProfileDraft, storage: Storage = sessionStorage): void {
+ *  from advancing to the confirm-email step. `ownerEmail` is the email the
+ *  wizard was filled out for (SignupPage's step 1) — required so a later
+ *  `loadProfileDraft` can refuse to hand this draft to a different person. */
+export function saveProfileDraft(draft: ProfileDraft, ownerEmail: string, storage: Storage = sessionStorage): void {
   const s = safeStorage(storage);
   if (!s) return;
   try {
-    s.setItem(PROFILE_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    s.setItem(PROFILE_DRAFT_STORAGE_KEY, JSON.stringify({ ownerEmail: normalizeEmail(ownerEmail), draft }));
   } catch {
     // best-effort — e.g. storage quota exceeded
   }
 }
 
-/** Returns the cached draft, or null if there isn't one / it's unreadable. */
-export function loadProfileDraft(storage: Storage = sessionStorage): ProfileDraft | null {
+/**
+ * Returns the cached draft, or null if there isn't one / it's unreadable /
+ * it was saved for a DIFFERENT email than `currentEmail`. Callers must
+ * always pass the real, currently-authenticated user's own email — never
+ * skip this check "just to see the draft."
+ */
+export function loadProfileDraft(currentEmail: string, storage: Storage = sessionStorage): ProfileDraft | null {
   const s = safeStorage(storage);
   if (!s) return null;
   try {
     const raw = s.getItem(PROFILE_DRAFT_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ProfileDraft>;
+    const parsed = JSON.parse(raw) as { ownerEmail?: unknown; draft?: Partial<ProfileDraft> };
+    if (typeof parsed.ownerEmail !== 'string' || parsed.ownerEmail !== normalizeEmail(currentEmail)) {
+      return null;
+    }
+    const d = parsed.draft ?? {};
     return {
-      designation: parsed.designation ?? null,
-      specialties: Array.isArray(parsed.specialties) ? parsed.specialties : [],
-      modalities: Array.isArray(parsed.modalities) ? parsed.modalities : [],
-      languages: Array.isArray(parsed.languages) ? parsed.languages : [],
-      serviceFeeRupees: parsed.serviceFeeRupees ?? null,
-      bio: typeof parsed.bio === 'string' ? parsed.bio : '',
+      designation: d.designation ?? null,
+      specialties: Array.isArray(d.specialties) ? d.specialties : [],
+      modalities: Array.isArray(d.modalities) ? d.modalities : [],
+      languages: Array.isArray(d.languages) ? d.languages : [],
+      serviceFeeRupees: d.serviceFeeRupees ?? null,
+      bio: typeof d.bio === 'string' ? d.bio : '',
     };
   } catch {
     return null;

@@ -48,7 +48,15 @@ function formatTimeRange(startIso: string, endIso: string): string {
 export function IdleStage({ onOpenAppointment }: { onOpenAppointment: (appointmentId: number) => void }) {
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
-  const isTherapist = currentUser?.role === 'therapist';
+  // Matches every sibling check in this feature area (TelehealthSplitView.tsx,
+  // InstantRoomPage.tsx) — an org_owner or admin-group therapist (a real,
+  // supported solo/small-practice case) is still treated as "the therapist"
+  // everywhere else on this page; this check was narrower and hid the
+  // personal-room button from exactly that population even though
+  // video-service's own auth (self-request by Cognito sub) would have let
+  // them use it.
+  const isTherapist =
+    currentUser?.role === 'therapist' || currentUser?.role === 'admin' || currentUser?.role === 'org_owner';
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();

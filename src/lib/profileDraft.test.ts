@@ -30,6 +30,8 @@ const SAMPLE: ProfileDraft = {
   bio: 'A caring, evidence-based approach to anxiety and OCD.',
 };
 
+const OWNER_EMAIL = 'priya@example.com';
+
 describe('profileDraft', () => {
   let storage: Storage;
 
@@ -37,29 +39,42 @@ describe('profileDraft', () => {
     storage = fakeStorage();
   });
 
-  it('round-trips a saved draft exactly', () => {
-    saveProfileDraft(SAMPLE, storage);
-    expect(loadProfileDraft(storage)).toEqual(SAMPLE);
+  it('round-trips a saved draft exactly for the same owner email', () => {
+    saveProfileDraft(SAMPLE, OWNER_EMAIL, storage);
+    expect(loadProfileDraft(OWNER_EMAIL, storage)).toEqual(SAMPLE);
+  });
+
+  it('email comparison is case-insensitive', () => {
+    saveProfileDraft(SAMPLE, 'Priya@Example.COM', storage);
+    expect(loadProfileDraft('priya@example.com', storage)).toEqual(SAMPLE);
+  });
+
+  it('REGRESSION: refuses to hand a draft saved for one email to a different one', () => {
+    saveProfileDraft(SAMPLE, 'person-a@example.com', storage);
+    expect(loadProfileDraft('person-b@example.com', storage)).toBeNull();
   });
 
   it('returns null when nothing has been saved', () => {
-    expect(loadProfileDraft(storage)).toBeNull();
+    expect(loadProfileDraft(OWNER_EMAIL, storage)).toBeNull();
   });
 
   it('clears the draft so a later load returns null', () => {
-    saveProfileDraft(SAMPLE, storage);
+    saveProfileDraft(SAMPLE, OWNER_EMAIL, storage);
     clearProfileDraft(storage);
-    expect(loadProfileDraft(storage)).toBeNull();
+    expect(loadProfileDraft(OWNER_EMAIL, storage)).toBeNull();
   });
 
   it('is resilient to corrupted JSON in storage — returns null, not a throw', () => {
     storage.setItem('iragu_plus:signup-profile-draft:v1', '{not valid json');
-    expect(loadProfileDraft(storage)).toBeNull();
+    expect(loadProfileDraft(OWNER_EMAIL, storage)).toBeNull();
   });
 
   it('fills in safe defaults for a partial/legacy record rather than surfacing undefined fields', () => {
-    storage.setItem('iragu_plus:signup-profile-draft:v1', JSON.stringify({ bio: 'Just a bio' }));
-    expect(loadProfileDraft(storage)).toEqual({
+    storage.setItem(
+      'iragu_plus:signup-profile-draft:v1',
+      JSON.stringify({ ownerEmail: OWNER_EMAIL, draft: { bio: 'Just a bio' } })
+    );
+    expect(loadProfileDraft(OWNER_EMAIL, storage)).toEqual({
       designation: null,
       specialties: [],
       modalities: [],
@@ -70,7 +85,7 @@ describe('profileDraft', () => {
   });
 
   it('a save then a clear leaves storage with no leftover key at all', () => {
-    saveProfileDraft(SAMPLE, storage);
+    saveProfileDraft(SAMPLE, OWNER_EMAIL, storage);
     clearProfileDraft(storage);
     expect(storage.getItem('iragu_plus:signup-profile-draft:v1')).toBeNull();
   });

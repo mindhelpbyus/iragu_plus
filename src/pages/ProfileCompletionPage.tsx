@@ -29,6 +29,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useAuthStore } from '../store/authStore';
 import {
   getMyTherapistProfile,
   updateTherapistCore,
@@ -37,6 +38,7 @@ import {
 } from '../api/therapistProfile';
 import { uploadFile } from '../api/files';
 import { loadProfileDraft, clearProfileDraft, type ProfileDraft } from '../lib/profileDraft';
+import { PROFILE_COMPLETION_NUDGE_KEY } from '../lib/profileCompletionGate';
 import { SPECIALTIES, MODALITIES, LANGUAGES } from '../lib/therapistVocabulary';
 import {
   MIN_BIO_LENGTH,
@@ -107,6 +109,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 
 export default function ProfileCompletionPage() {
   const navigate = useNavigate();
+  const currentUserEmail = useAuthStore((s) => s.user?.email);
   const [profile, setProfile] = useState<TherapistMe | null>(null);
   const [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +128,23 @@ export default function ProfileCompletionPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setDraft(loadProfileDraft());
+    // Only ever hand back a draft that was saved for THIS logged-in user's
+    // own email — see profileDraft.ts's header for why an unscoped load is
+    // a real cross-user data leak on a shared-tab machine.
+    setDraft(currentUserEmail ? loadProfileDraft(currentUserEmail) : null);
+    // App.tsx's gate effect never fires FOR this route (`/complete-profile`
+    // is itself excluded from `isEligibleForProfileCompletionNudge`, so a
+    // direct hand-off from SignupPage's confirm step never sets this flag).
+    // Reaching this page at all — by redirect OR direct navigation — is what
+    // "acted on this session's nudge" means; set it here so a later "Skip
+    // for now" doesn't get immediately bounced right back by the gate
+    // re-running on the very next eligible route with a fresh "incomplete"
+    // read and no flag to stop it.
+    try {
+      sessionStorage.setItem(PROFILE_COMPLETION_NUDGE_KEY, '1');
+    } catch {
+      // best-effort — same posture as every other sessionStorage touch here
+    }
     (async () => {
       setLoading(true);
       setError(null);
@@ -143,6 +162,10 @@ export default function ProfileCompletionPage() {
     return () => {
       cancelled = true;
     };
+    // Mount-once by design — currentUserEmail is already stable by the time
+    // this page can render at all (RequireAuth/App.tsx wait on refreshUser()
+    // before any protected route mounts).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Populate the editable form once (and only once) the real profile has
