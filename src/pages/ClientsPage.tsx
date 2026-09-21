@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, AlertTriangle } from 'lucide-react';
+import { Plus, Search, AlertTriangle, UserPlus } from 'lucide-react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/button';
 import {
@@ -12,6 +12,9 @@ import {
   PaginationPrevious,
 } from '../components/ui/pagination';
 import { useClients } from './clients/useClients';
+import { useClientInvites } from './clients/useClientInvites';
+import { InviteClientModal } from './clients/InviteClientModal';
+import { PendingInvitesPanel } from './clients/PendingInvitesPanel';
 import { initialsOf } from './calendar/calendarConstants';
 import { MoodIndicator } from '../components/ui/MoodIndicator';
 
@@ -42,6 +45,8 @@ export default function ClientsPage() {
   const navigate = useNavigate();
   const { rows, loading, error, page, setPage, totalPages, total, statusFilter, setStatusFilter, isOrg } = useClients();
   const [search, setSearch] = useState('');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const invitesHook = useClientInvites();
 
   // Client-side over the current page only — this backend's clients list has
   // no server-side search param (confirmed: no `search` handling in
@@ -66,11 +71,19 @@ export default function ClientsPage() {
                 {total} {isOrg ? 'total' : 'in your caseload'}
               </p>
             </div>
-            <Button className="h-10 gap-2" onClick={() => navigate('/clients?new=1')}>
-              <Plus className="h-4 w-4" />
-              New client
-            </Button>
+            <div className="flex gap-2.5">
+              <Button variant="outline" className="h-10 gap-2" onClick={() => setInviteOpen(true)}>
+                <UserPlus className="h-4 w-4" />
+                Invite a client
+              </Button>
+              <Button className="h-10 gap-2" onClick={() => navigate('/clients?new=1')}>
+                <Plus className="h-4 w-4" />
+                New client
+              </Button>
+            </div>
           </div>
+
+          <PendingInvitesPanel invitesHook={invitesHook} />
 
           <div className="mb-4 flex flex-wrap items-center gap-2.5">
             <div className="relative">
@@ -186,6 +199,13 @@ export default function ClientsPage() {
           )}
         </div>
       </main>
+
+      {inviteOpen && (
+        <InviteClientModal
+          onClose={() => setInviteOpen(false)}
+          onInvited={(invite) => invitesHook.addInvite(invite)}
+        />
+      )}
     </>
   );
 }
